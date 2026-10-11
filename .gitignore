@@ -1,2 +1,16 @@
+/.idea/
+/cmake-build-*/
+/build/
+/.deps/
 *.exe
-dist/
+*.dll
+*.o
+*.obj
+__pycache__/
+*.pyc
+/Helium-Browser-DRM-Fixer/
+/.codex/
+SECURITY.md
+THIRD_PARTY.md
+plan.md
+AGENTS.md

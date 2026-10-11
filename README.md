@@ -1,127 +1,145 @@
-# Helium Browser DRM Fixer
+# Helium DRM Fixer (C++20)
 
-A cross-platform CLI tool that fixes DRM issues in the [Helium browser](https://helium.computer/) by providing the Widevine CDM (Content Decryption Module).
+Konsolenprogramm für Windows 11 x64 und native Linux-x86_64-Installationen.
+Es beschafft Widevine aus dem Google-Komponentenupdate, prüft SHA-256 und
+CRX3-Signaturen und installiert das CDM mit Backup und Wiederherstellung.
+Ein unabhängiges Drittanbieterprojekt, keine offizielle Helium-Komponente.
 
-Helium is a lightweight Chromium-based browser that does not bundle Google Widevine CDM, so DRM-protected content (YouTube, Crunchyroll, Spotify, etc.) won't play out of the box. This tool automates getting WidevineCdm and placing it where Helium expects it.
+## Bauen in CLion unter Windows
 
-## How It Works
+Dieses Verzeichnis als CMake-Projekt öffnen. C++20 ist bereits eingestellt.
+CLions mitgeliefertes MinGW funktioniert; CMake benötigt mindestens Version 3.24.
+Beim ersten Konfigurieren lädt CMake zwei per Version und SHA-256 festgelegte
+Quellarchive herunter: nlohmann/json 3.12.0 und miniz 3.1.2. Es verwendet kein Git.
+Bei bereits vorhandenen `.deps`-Archiven wird deren Hash ebenfalls geprüft.
 
-1. **Downloads WidevineCdm** directly from Google's official Component Updater API (default).
-2. Extracts the official `.crx3` package using pure Go (no external tools like 7-Zip required).
-3. If the download fails, **falls back** to copying WidevineCdm from a local Chrome installation.
-4. Copies the CDM files into Helium's directory structure.
-5. On **macOS**, re-signs the app bundle after modification.
-6. On **Linux**, writes a component updater hint file so Chromium discovers the CDM.
+In CLion das Ziel `helium_drm_fixer` auswählen und bauen. Zum ersten Start
+`--help` oder `--check` als Programmargument setzen: ein Start ohne Argumente
+beginnt die Installation, wenn Helium erkannt und geschlossen ist.
 
-> **Note:** This enables basic Widevine loading. Stricter services like Netflix or Amazon Prime Video may still fail due to additional requirements (browser identity, HDCP, Verified Media Path, etc.).
+Mit MinGW liegen die benötigten drei Compiler-Laufzeit-DLLs neben der EXE.
+Diese Dateien beim Weitergeben zusammenlassen. Windows-HTTP, TLS und
+Kryptografie verwenden WinHTTP und CNG aus dem Betriebssystem.
+MSVC wird ebenfalls in der CI-Konfiguration berücksichtigt; ein lokaler
+MSVC-Lauf ist in dieser Umgebung noch nicht erfolgt.
 
-## Installation
+## Bauen unter Linux
 
-### Download Pre-built Binary
+Getestete Build-Basis: Ubuntu 24.04 x86_64, GCC 13 und Clang 18.
+Benötigt werden CMake >= 3.24, ein C++20-Compiler, Ninja, libcurl >= 7.85,
+OpenSSL >= 3.0 und System-CA-Zertifikate. Python ist nur für zusätzliche Tests nötig.
 
-Go to [Releases](https://github.com/Du-vy/helium-browser-drm-fixer/releases) and download the binary for your platform.
-
-### Build from Source
-
-```bash
-git clone https://github.com/Du-vy/helium-browser-drm-fixer.git
-cd helium-browser-drm-fixer
-go build -o helium-drm-fixer .
+```sh
+sudo apt install build-essential cmake ninja-build libcurl4-openssl-dev libssl-dev ca-certificates python3
+cmake --preset debug
+cmake --build --preset debug
+ctest --preset debug
 ```
 
-**Requirements:** Go 1.22+. Zero external dependencies.
+Das Programm selbst im Benutzerkonto starten, ohne sudo. Andere Distributionen
+müssen passende Bibliotheken bereitstellen. Keine allgemeine Kompatibilitätszusage
+für alle Linux-Systeme. Flatpak und Snap werden nicht unterstützt; AppImage ist
+noch nicht separat mit einem Browser getestet.
 
-## Usage
+## Verwendung
 
-```bash
-# Fix DRM (auto-download WidevineCdm, no Chrome needed)
-./helium-drm-fixer
+Windows:
 
-# Check if fix is needed without applying changes
-./helium-drm-fixer --check
-
-# Show what would be done without making changes
-./helium-drm-fixer --dry-run
-
-# Enable verbose logging
-./helium-drm-fixer --verbose
-
-# Force re-download even if cached
-./helium-drm-fixer --force-download
-
-# Use custom paths
-./helium-drm-fixer --chrome-path "C:\path\to\WidevineCdm" --helium-path "C:\path\to\Helium"
+```powershell
+.\helium_drm_fixer.exe --help
+.\helium_drm_fixer.exe --check
+.\helium_drm_fixer.exe --dry-run
 ```
 
-### Options
+Linux:
 
-| Flag | Description |
-|---|---|
-| `--check` | Check if fix is needed without applying changes |
-| `--dry-run` | Show what would be done without making changes |
-| `--verbose` | Enable verbose logging |
-| `--debug` | Alias for `--verbose` |
-| `--chrome-path <path>` | Custom path to WidevineCdm directory |
-| `--helium-path <path>` | Custom path to Helium target directory |
-| `--force-download` | Force re-download even if a cached version exists |
-
-## Platform Support
-
-| Platform | Auto-download | Local Chrome fallback |
-|---|---|---|
-| **Windows** | Yes | Yes |
-| **macOS** | Yes | Yes |
-| **Linux** | Yes | Yes |
-
-You can also pass custom paths manually if needed:
-
-```bash
-# macOS
-./helium-drm-fixer --chrome-path "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/133.0.6943.142/Libraries/WidevineCdm"
-
-# Linux
-./helium-drm-fixer --chrome-path "/opt/google/chrome/WidevineCdm"
+```sh
+./helium_drm_fixer --check
+./helium_drm_fixer --dry-run
 ```
 
-## Troubleshooting
+`--check` und `--dry-run` sind lokal und schreibfrei: keine Downloads, keine
+Cache-Erzeugung und keine Protokolldateien. Eine unbekannte Online-Version wird
+nicht geraten. Ein lokal plausibles CDM beweist weder dessen Herausgeberintegrität
+noch funktionierendes Streaming.
 
-### "Helium browser not found"
-Ensure Helium is installed. Download from [https://helium.computer/](https://helium.computer/). On Linux, launch it at least once before running the tool.
+Für die tatsächliche Installation Helium vollständig schließen und das Programm
+ohne Prüfmodus starten. Der Standard ist `--source google`; bei Fehlern findet
+kein stiller Wechsel auf eine andere Vertrauensquelle statt.
 
-### "Failed to copy WidevineCdm"
-Make sure you have write permissions to the Helium application directory. On macOS you may need `sudo`.
+`--helium-path` bezeichnet immer den **exakten WidevineCdm-Ordner**, nicht den
+Helium-Anwendungsordner. Beispiel unter Windows:
 
-### "Failed to re-sign Helium.app" (macOS)
-Run with `sudo` or manually execute:
-```bash
-sudo codesign --force --deep --sign - "/Applications/Helium.app"
+```powershell
+.\helium_drm_fixer.exe --dry-run --helium-path "C:\Users\NAME\AppData\Local\imput\Helium\Application\VERSION\WidevineCdm"
 ```
 
-## Project Structure
+Linux nutzt `<Profil>/WidevineCdm/<CDM-Version>` und die JSON-Hint-Datei innerhalb
+des WidevineCdm-Roots. `XDG_CONFIG_HOME` wird berücksichtigt; bei mehreren
+erkannten Profilen ist ein expliziter Zielpfad erforderlich.
 
-```
-├── main.go                       # CLI entry point (flag parsing)
-├── internal/
-│   ├── detector/                 # Chrome & Helium detection (Win, macOS, Linux)
-│   │   ├── detector.go           # Path resolution & manifest parser
-│   │   ├── registry_windows.go   # Windows registry Chrome detection
-│   │   └── registry_other.go     # Non-Windows stub
-│   ├── fixer/                    # Orchestration, copy, codesign & hint files
-│   │   ├── fixer.go              # Core workflow logic
-│   │   ├── logger.go             # Formatted ANSI logger
-│   │   └── options.go            # CLI configuration options
-│   └── widevine/                 # Widevine CDM acquisition & extraction
-│       ├── download.go           # Google Component Updater client & cache
-│       └── extract.go            # Pure Go CRX3 / ZIP unpacking
-├── go.mod / go.sum               # Go modules
-└── LICENSE
+Weitere Quellen werden ausdrücklich gewählt:
+
+```sh
+./helium_drm_fixer --source chrome --chrome-path /opt/google/chrome/WidevineCdm
+./helium_drm_fixer --source package --package /path/to/widevine.crx3
 ```
 
-## Credits
+Chrome-Dateien werden als lokal vertraute Quelle behandelt, nicht als
+signaturgeprüftes Google-Paket ausgegeben. Offline-CRX3-Pakete müssen dieselbe
+Widevine-Identität und gültige Signaturen haben; ohne Online-Metadaten ist dabei
+keine Aussage zur Aktualität möglich.
 
-- [Helium Browser](https://helium.computer/) — the browser this tool fixes
-- Google Chrome Omaha / Component Updater API — official source for Widevine CDM components
+## Backup und Recovery
 
-## License
+Neben dem Ziel entsteht ein privates Verzeichnis `.helium-drm-fixer`.
+Es enthält ein Eigentumskennzeichen, eine Sperre, das Transaktionsjournal sowie
+Backups. Vorhandene CDM-Dateien werden umbenannt, nicht vorab gelöscht.
+Unter Linux ist die Hint-Datei Teil des gemeinsam gesicherten CDM-Ordners.
 
-MIT
+```sh
+./helium_drm_fixer --restore
+```
+
+Mit einem individuellen Zielpfad denselben `--helium-path` auch beim Restore
+angeben. Nach einem Abbruch verweigert eine neue Installation den Start, bis die
+Wiederherstellung abgeschlossen ist. Hat sich der Inhalt des Backups oder der
+aktuellen Installation verändert, erfolgt keine automatische Überschreibung.
+
+Die letzte Transaktion ist über `--restore` erreichbar. Frühere Journale und
+Backups bleiben zur manuellen Wiederherstellung erhalten. Es gibt bewusst keine
+automatische Backup-Löschung; sie können Speicherplatz belegen.
+
+Exitcodes: 0 Erfolg/lokal plausibel, 1 Betriebsfehler, 2 ungültige Optionen,
+3 fehlt/nicht gefunden, 4 Sicherheitsprüfung fehlgeschlagen,
+5 Recovery erforderlich, 130 Abbruch.
+
+## Prüfung und Auslieferung
+
+Der C++-Code verwendet das Google-Format aus der projektweiten
+`.clang-format`. In CLion unter **Settings → Editor → Code Style → C/C++**
+die Unterstützung für ClangFormat aktivieren. Zum Formatieren und Prüfen
+mit `clang-format` im PATH:
+
+```sh
+clang-format -i main.cpp include/fixer.hpp src/*.cpp tests/*.cpp
+clang-format --dry-run --Werror main.cpp include/fixer.hpp src/*.cpp tests/*.cpp
+```
+
+Die Tests verwenden künstliche CDM-Dateien in temporären Verzeichnissen.
+Sie laden keine Bibliothek in einen Prozess und verändern keine reale
+Helium-Installation. Zusätzlich werden Prozessabbrüche an fünf
+Transaktionsgrenzen getestet. Der Clang-Fuzz-Harness prüft die Parser mit
+AddressSanitizer/UndefinedBehaviorSanitizer.
+
+```sh
+cmake --preset release
+cmake --build --preset release
+cmake --install build/release --prefix build/package
+```
+
+Die CI-Datei baut Windows mit MSVC und Linux mit GCC/Clang und stellt
+Build-Artefakte bereit. Sie veröffentlicht keine Releases.
+Details zu Sicherheitsgrenzen und noch ausstehenden Browser-Tests stehen in
+[SECURITY.md](SECURITY.md). Bibliotheksquellen und Lizenzhinweise stehen in
+[THIRD_PARTY.md](THIRD_PARTY.md). Widevine selbst wird nicht mitgeliefert.
