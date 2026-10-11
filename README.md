@@ -132,6 +132,21 @@ Helium-Installation. Zusätzlich werden Prozessabbrüche an fünf
 Transaktionsgrenzen getestet. Der Clang-Fuzz-Harness prüft die Parser mit
 AddressSanitizer/UndefinedBehaviorSanitizer.
 
+Die Fehlerfalltests prüfen außerdem Abbruch mit Rollback, manipulierte Backups
+und Journale, Hardlinks sowie unter Windows gesperrte DLLs. Für Linux gibt es
+zwei zusätzliche Testmodi:
+
+```sh
+# Als normaler Benutzer, nicht als root:
+./build/debug/fixer_tests --permission-denied
+# Nur auf einem eigenen Test-Dateisystem mit weniger als 1 MiB freiem Platz:
+./build/debug/fixer_tests --low-space /pfad/zum/test-dateisystem
+```
+
+Das Docker-Testskript `tools/run_linux_tests.sh` fuzztestet standardmäßig
+60 Sekunden. `FIXER_FUZZ_SECONDS` erlaubt 1 bis 3600 Sekunden; ein längerer
+Lauf ersetzt keine umfassende Sicherheitsprüfung.
+
 ```sh
 cmake --preset release
 cmake --build --preset release

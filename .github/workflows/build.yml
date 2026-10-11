@@ -41,11 +41,13 @@ jobs:
         run: cmake --build --preset debug --parallel 4
       - name: Test
         run: ctest --preset debug
+      - name: Unprivileged write-permission failure
+        run: build/debug/fixer_tests --permission-denied
       - name: Fuzz smoke test
         if: matrix.compiler == 'clang'
         run: |
           python3 tools/seed_fuzz.py build/corpus
-          build/debug/fixer_fuzz build/corpus -max_total_time=15 -timeout=5 -rss_limit_mb=512
+          build/debug/fixer_fuzz build/corpus -max_total_time=60 -timeout=5 -rss_limit_mb=512 -max_len=65536
       - name: Package GCC build
         if: matrix.compiler == 'gcc'
         run: cmake --install build/debug --prefix build/package
