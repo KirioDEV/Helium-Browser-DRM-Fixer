@@ -17,11 +17,13 @@
 // clang-format on
 #else
 #include <fcntl.h>
+#include <linux/fs.h>
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 #include <openssl/x509.h>
 #include <sys/file.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 #endif
 
@@ -129,6 +131,49 @@ fs::path env_path(const char *name) {
   return value && *value ? fs::path(value) : fs::path{};
 }
 #endif
+using DirectoryHandles = std::vector<std::unique_ptr<Handle>>;
+
+// Open each component without following links. Retain the handles until the
+// operation finishes: Windows denies ancestor renames; Linux operates relative
+// to the original directory descriptors even if an ancestor is renamed.
+DirectoryHandles pin_directory(const fs::path &path) {
+  const auto absolute = fs::absolute(path);
+  DirectoryHandles handles;
+  auto open_component = [&](const fs::path &component, const fs::path &full) {
+#ifdef _WIN32
+    auto handle = std::make_unique<Handle>(CreateFileW(
+        full.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+        OPEN_EXISTING,
+        FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
+    require(handle->value != INVALID_HANDLE_VALUE,
+            "Cannot pin directory: " + utf8(full), Code::failure);
+    BY_HANDLE_FILE_INFORMATION info{};
+    require(GetFileInformationByHandle(handle->value, &info) != 0,
+            "Cannot inspect directory handle", Code::failure);
+    require((info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) &&
+                !(info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT),
+            "Directory handle points to a reparse point or non-directory");
+    (void)component;
+#else
+    const auto flags = O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW;
+    auto handle = std::make_unique<Handle>(
+        handles.empty()
+            ? open(full.c_str(), flags)
+            : openat(handles.back()->value, component.c_str(), flags));
+    require(handle->value >= 0, "Cannot pin directory: " + utf8(full),
+            Code::failure);
+#endif
+    handles.push_back(std::move(handle));
+  };
+  auto current = absolute.root_path();
+  open_component(current, current);
+  for (const auto &component : absolute.relative_path()) {
+    require(component != "." && component != "..", "Unnormalized directory");
+    current /= component;
+    open_component(component, current);
+  }
+  return handles;
+}
 std::optional<fs::path> latest_version_dir(const fs::path &root) {
   if (!fs::is_directory(root)) return std::nullopt;
   assert_safe_path(root, false);
@@ -203,6 +248,7 @@ void assert_safe_path(const fs::path &path, bool allow_missing) {
 
 Bytes read_file(const fs::path &path, std::size_t limit, bool prefix_only) {
   assert_safe_path(path, false);
+  const auto parent = pin_directory(fs::absolute(path).parent_path());
 #ifdef _WIN32
   Handle file(CreateFileW(
       path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
@@ -229,8 +275,8 @@ Bytes read_file(const fs::path &path, std::size_t limit, bool prefix_only) {
     pos += count;
   }
 #else
-  Handle file(
-      open(path.c_str(), O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK));
+  Handle file(openat(parent.back()->value, path.filename().c_str(),
+                     O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK));
   require(file.value >= 0, "Cannot read: " + utf8(path), Code::failure);
   regular_handle(file.value);
   struct stat info{};
@@ -252,14 +298,18 @@ Bytes read_file(const fs::path &path, std::size_t limit, bool prefix_only) {
   return out;
 }
 
-void write_file(const fs::path &path, std::span<const unsigned char> data) {
-  assert_safe_path(path);
+namespace {
+void write_in_directory(const fs::path &path,
+                        std::span<const unsigned char> data,
+                        const DirectoryHandles &parent, bool &created) {
 #ifdef _WIN32
+  (void)parent;
   Handle file(CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
                           FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
                           nullptr));
   require(file.value != INVALID_HANDLE_VALUE,
           "Cannot exclusively create: " + utf8(path), Code::failure);
+  created = true;
   std::size_t pos = 0;
   while (pos < data.size()) {
     DWORD count = 0;
@@ -274,10 +324,12 @@ void write_file(const fs::path &path, std::span<const unsigned char> data) {
   require(FlushFileBuffers(file.value) != 0, "Cannot flush file",
           Code::failure);
 #else
-  Handle file(open(path.c_str(),
-                   O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600));
+  Handle file(openat(parent.back()->value, path.filename().c_str(),
+                     O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC,
+                     0600));
   require(file.value >= 0, "Cannot exclusively create: " + utf8(path),
           Code::failure);
+  created = true;
   std::size_t pos = 0;
   while (pos < data.size()) {
     const auto count = write(file.value, data.data() + pos, data.size() - pos);
@@ -288,6 +340,14 @@ void write_file(const fs::path &path, std::span<const unsigned char> data) {
   require(fsync(file.value) == 0, "Cannot flush file", Code::failure);
 #endif
 }
+}  // namespace
+
+void write_file(const fs::path &path, std::span<const unsigned char> data) {
+  assert_safe_path(path);
+  const auto parent = pin_directory(fs::absolute(path).parent_path());
+  bool created = false;
+  write_in_directory(path, data, parent, created);
+}
 
 void write_text(const fs::path &path, const std::string &text) {
   write_file(path, {reinterpret_cast<const unsigned char *>(text.data()),
@@ -296,64 +356,91 @@ void write_text(const fs::path &path, const std::string &text) {
 
 void sync_dir(const fs::path &path) {
 #ifndef _WIN32
-  Handle directory(
-      open(path.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
-  require(directory.value >= 0 && fsync(directory.value) == 0,
-          "Cannot sync directory", Code::failure);
+  const auto directory = pin_directory(path);
+  require(fsync(directory.back()->value) == 0, "Cannot sync directory",
+          Code::failure);
 #else
   (void)path;  // MoveFileExW uses WRITE_THROUGH; Windows has no general
                // directory fsync API.
 #endif
 }
 
-void durable_rename(const fs::path &source, const fs::path &dest) {
+void durable_rename(const fs::path &source, const fs::path &dest,
+                    const std::function<void()> &before_rename) {
   assert_safe_path(source, false);
   assert_safe_path(dest);
   require(!fs::exists(dest), "Rename destination already exists");
+  const auto source_parent = pin_directory(fs::absolute(source).parent_path());
+  const auto dest_parent = pin_directory(fs::absolute(dest).parent_path());
+  if (before_rename) before_rename();
 #ifdef _WIN32
   require(
       MoveFileExW(source.c_str(), dest.c_str(), MOVEFILE_WRITE_THROUGH) != 0,
       "Cannot rename: " + utf8(source), Code::failure);
 #else
-  require(rename(source.c_str(), dest.c_str()) == 0,
-          "Cannot rename: " + utf8(source), Code::failure);
-  sync_dir(source.parent_path());
-  if (source.parent_path() != dest.parent_path()) sync_dir(dest.parent_path());
+  // A preceding existence check alone cannot prevent a concurrently created
+  // destination from being overwritten by plain rename(). Never fall back to
+  // it.
+  require(
+      syscall(SYS_renameat2, source_parent.back()->value,
+              source.filename().c_str(), dest_parent.back()->value,
+              dest.filename().c_str(), RENAME_NOREPLACE) == 0,
+      "Cannot rename without replacement (renameat2 required): " + utf8(source),
+      Code::failure);
+  require(fsync(source_parent.back()->value) == 0 &&
+              fsync(dest_parent.back()->value) == 0,
+          "Cannot sync renamed directories", Code::failure);
 #endif
 }
 
 void replace_text(const fs::path &path, const std::string &text) {
   assert_safe_path(path);
+  const auto parent = pin_directory(fs::absolute(path).parent_path());
   const auto temporary =
       path.parent_path() / (utf8(path.filename()) + ".tmp-" + random_id());
-  write_text(temporary, text);
+  bool created = false;
   try {
+    write_in_directory(
+        temporary,
+        {reinterpret_cast<const unsigned char *>(text.data()), text.size()},
+        parent, created);
 #ifdef _WIN32
     require(
         MoveFileExW(temporary.c_str(), path.c_str(),
                     MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0,
         "Cannot replace journal", Code::failure);
 #else
-    require(rename(temporary.c_str(), path.c_str()) == 0,
+    require(renameat(parent.back()->value, temporary.filename().c_str(),
+                     parent.back()->value, path.filename().c_str()) == 0,
             "Cannot replace journal", Code::failure);
-    sync_dir(path.parent_path());
+    require(fsync(parent.back()->value) == 0, "Cannot sync journal directory",
+            Code::failure);
 #endif
   } catch (...) {
-    fs::remove(temporary);
+    if (created) {
+#ifdef _WIN32
+      std::error_code ignored;
+      fs::remove(temporary, ignored);
+#else
+      (void)unlinkat(parent.back()->value, temporary.filename().c_str(), 0);
+#endif
+    }
     throw;
   }
 }
 
 void create_private_dir(const fs::path &path) {
   assert_safe_path(path);
+  const auto parent = pin_directory(fs::absolute(path).parent_path());
   if (fs::exists(path)) {
     require(fs::is_directory(path), "Expected a directory");
+    const auto existing = pin_directory(path);
 #ifdef _WIN32
     check_private_acl(path);
 #else
     struct stat info{};
-    require(lstat(path.c_str(), &info) == 0 && info.st_uid == geteuid() &&
-                (info.st_mode & 0077) == 0,
+    require(fstat(existing.back()->value, &info) == 0 &&
+                info.st_uid == geteuid() && (info.st_mode & 0077) == 0,
             "Managed directory is not private or not owned by this user");
 #endif
     return;
@@ -379,9 +466,10 @@ void create_private_dir(const fs::path &path) {
   LocalFree(descriptor);
   require(ok, "Cannot create private directory: " + utf8(path), Code::failure);
 #else
-  require(mkdir(path.c_str(), 0700) == 0, "Cannot create private directory",
+  require(mkdirat(parent.back()->value, path.filename().c_str(), 0700) == 0,
+          "Cannot create private directory", Code::failure);
+  require(fsync(parent.back()->value) == 0, "Cannot sync new directory parent",
           Code::failure);
-  sync_dir(path.parent_path());
 #endif
 }
 
@@ -526,20 +614,22 @@ bool verify_signature(std::span<const unsigned char> key,
 }
 
 struct Lock::Impl {
+  DirectoryHandles parents;
   Handle file;
 
   explicit Impl(const fs::path &path)
+      : parents(pin_directory(fs::absolute(path).parent_path())),
 #ifdef _WIN32
-      : file(CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr,
+        file(CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr,
                          OPEN_ALWAYS, FILE_FLAG_OPEN_REPARSE_POINT, nullptr)) {
     require(file.value != INVALID_HANDLE_VALUE,
             "Another operation is running or lock is inaccessible",
             Code::failure);
     regular_handle(file.value);
 #else
-      : file(open(path.c_str(),
-                  O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK,
-                  0600)) {
+        file(openat(parents.back()->value, path.filename().c_str(),
+                    O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK,
+                    0600)) {
     require(file.value >= 0, "Cannot open installation lock", Code::failure);
     regular_handle(file.value);
     require(flock(file.value, LOCK_EX | LOCK_NB) == 0,

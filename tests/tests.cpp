@@ -121,8 +121,8 @@ int main(int argc, char **argv) {
 #endif
     if (argc == 3 && std::string(argv[1]) == "--low-space") {
       const auto parent = fs::absolute(from_utf8(argv[2]));
-      expect(fs::space(parent).available < 1024 * 1024,
-             "Low-space test requires a filesystem with less than 1 MiB free");
+      expect(fs::space(parent).available <= 64 * 1024,
+             "Low-space test requires a filesystem with at most 64 KiB free");
       const auto root = parent / ("helium-fixer-space-test-" + random_id());
       create_private_dir(root);
       bool failed_for_space = false;
@@ -137,9 +137,20 @@ int main(int argc, char **argv) {
              "Installation did not reject insufficient space");
       expect(fs::is_empty(root),
              "Insufficient space created transaction files");
+      write_text(root / "journal.json", "original journal");
+      const auto before_write_failure = snapshot(root);
+      rejects(
+          [&] {
+            replace_text(root / "journal.json", std::string(128 * 1024, 'x'));
+          },
+          "Journal write must report real ENOSPC");
+      expect(snapshot(root) == before_write_failure,
+             "Failed journal write changed original or left a partial "
+             "temporary file");
+      fs::remove(root / "journal.json");
       fs::remove(root);
       std::cout
-          << "Real low-space preflight passed without filesystem changes\n";
+          << "Real low-space preflight and ENOSPC journal cleanup passed\n";
       return 0;
     }
     if (argc == 4 && std::string(argv[1]) == "--crash") {
@@ -376,6 +387,106 @@ int main(int argc, char **argv) {
     rejects([&] { (void)read_file(root / "prefix-test", 128); },
             "Hardlink original read");
     fs::remove(root / "hardlink-test");
+    const auto rename_root = root / "rename-tests";
+    create_private_dir(rename_root);
+    const auto collision_source = rename_root / "source";
+    const auto collision_dest = rename_root / "destination";
+    write_text(collision_source, "source contents");
+    rejects(
+        [&] {
+          durable_rename(collision_source, collision_dest, [&] {
+            write_text(collision_dest, "concurrent contents");
+          });
+        },
+        "Concurrent rename destination file");
+    expect(read_file(collision_source, 128) ==
+               Bytes({'s', 'o', 'u', 'r', 'c', 'e', ' ', 'c', 'o', 'n', 't',
+                      'e', 'n', 't', 's'}),
+           "Concurrent rename preserved source file");
+    expect(read_file(collision_dest, 128) ==
+               Bytes({'c', 'o', 'n', 'c', 'u', 'r', 'r', 'e', 'n', 't', ' ',
+                      'c', 'o', 'n', 't', 'e', 'n', 't', 's'}),
+           "Concurrent rename preserved destination file");
+    const auto source_tree = rename_root / "source-tree";
+    const auto dest_tree = rename_root / "destination-tree";
+    create_private_dir(source_tree);
+    rejects(
+        [&] {
+          durable_rename(source_tree, dest_tree,
+                         [&] { create_private_dir(dest_tree); });
+        },
+        "Concurrent empty destination directory");
+    expect(fs::is_directory(source_tree) && fs::is_directory(dest_tree),
+           "Concurrent empty directory was replaced");
+    const auto before_failed_journal = snapshot(rename_root);
+    rejects([&] { replace_text(dest_tree, "journal contents"); },
+            "Journal replacement must not replace a directory");
+    expect(
+        snapshot(rename_root) == before_failed_journal,
+        "Failed journal replacement left a temporary file or changed contents");
+    {
+      struct RestoreDirectory {
+        fs::path original = fs::current_path();
+        ~RestoreDirectory() { fs::current_path(original); }
+      } restore_directory;
+      fs::current_path(rename_root);
+      write_text("relative-file", "relative contents");
+      durable_rename("relative-file", "relative-renamed");
+      replace_text("relative-renamed", "updated");
+      const auto bytes = read_file("relative-renamed", 128);
+      expect(std::string(bytes.begin(), bytes.end()) == "updated",
+             "Relative file and directory-handle operations");
+    }
+    const auto source_parent = rename_root / "source-parent";
+    const auto dest_parent = rename_root / "destination-parent";
+    const auto moved_source_parent = rename_root / "original-source";
+    const auto moved_dest_parent = rename_root / "original-destination";
+    create_private_dir(source_parent);
+    create_private_dir(dest_parent);
+    write_text(source_parent / "payload", "original");
+#ifdef _WIN32
+    bool source_rename_blocked = false, dest_rename_blocked = false;
+    durable_rename(source_parent / "payload", dest_parent / "payload", [&] {
+      std::error_code error;
+      fs::rename(source_parent, moved_source_parent, error);
+      source_rename_blocked = static_cast<bool>(error);
+      error.clear();
+      fs::rename(dest_parent, moved_dest_parent, error);
+      dest_rename_blocked = static_cast<bool>(error);
+    });
+    expect(source_rename_blocked && dest_rename_blocked,
+           "Pinned Windows parents could be renamed");
+    expect(read_file(dest_parent / "payload", 128) ==
+               Bytes({'o', 'r', 'i', 'g', 'i', 'n', 'a', 'l'}),
+           "Pinned Windows rename lost contents");
+#else
+    const auto redirected_source = rename_root / "redirected-source";
+    const auto redirected_dest = rename_root / "redirected-destination";
+    create_private_dir(redirected_source);
+    create_private_dir(redirected_dest);
+    write_text(redirected_source / "payload", "unrelated");
+    durable_rename(source_parent / "payload", dest_parent / "payload", [&] {
+      fs::rename(source_parent, moved_source_parent);
+      fs::rename(dest_parent, moved_dest_parent);
+      fs::create_directory_symlink(redirected_source, source_parent);
+      fs::create_directory_symlink(redirected_dest, dest_parent);
+    });
+    expect(!fs::exists(moved_source_parent / "payload") &&
+               read_file(moved_dest_parent / "payload", 128) ==
+                   Bytes({'o', 'r', 'i', 'g', 'i', 'n', 'a', 'l'}),
+           "Linux rename did not use original directory descriptors");
+    expect(fs::is_empty(redirected_dest) &&
+               read_file(redirected_source / "payload", 128) ==
+                   Bytes({'u', 'n', 'r', 'e', 'l', 'a', 't', 'e', 'd'}),
+           "Linux rename followed swapped parent symlinks");
+    rejects(
+        [&] {
+          durable_rename(source_parent / "payload", dest_parent / "other");
+        },
+        "Initial parent symlink rejected");
+    fs::remove(source_parent);
+    fs::remove(dest_parent);
+#endif
 #ifndef _WIN32
     fs::create_symlink(root / "prefix-test", root / "link-test");
     rejects([&] { (void)read_file(root / "link-test", 128); },

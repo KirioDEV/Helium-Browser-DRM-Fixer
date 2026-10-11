@@ -28,6 +28,9 @@ MSVC-Lauf ist in dieser Umgebung noch nicht erfolgt.
 Getestete Build-Basis: Ubuntu 24.04 x86_64, GCC 13 und Clang 18.
 Benötigt werden CMake >= 3.24, ein C++20-Compiler, Ninja, libcurl >= 7.85,
 OpenSSL >= 3.0 und System-CA-Zertifikate. Python ist nur für zusätzliche Tests nötig.
+Das Ziel-Dateisystem muss `renameat2` mit `RENAME_NOREPLACE` unterstützen;
+ohne diese Funktion wird eine Installation abgebrochen. Für die geprüften
+Elternverzeichnisse werden Leserechte benötigt.
 
 ```sh
 sudo apt install build-essential cmake ninja-build libcurl4-openssl-dev libssl-dev ca-certificates python3
@@ -139,7 +142,7 @@ zwei zusätzliche Testmodi:
 ```sh
 # Als normaler Benutzer, nicht als root:
 ./build/debug/fixer_tests --permission-denied
-# Nur auf einem eigenen Test-Dateisystem mit weniger als 1 MiB freiem Platz:
+# Nur auf einem eigenen Test-Dateisystem mit höchstens 64 KiB freiem Platz:
 ./build/debug/fixer_tests --low-space /pfad/zum/test-dateisystem
 ```
 
