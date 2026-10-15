@@ -4,6 +4,7 @@
 #include <iostream>
 #include <map>
 
+#include "directory.hpp"
 #include "fixer.hpp"
 #ifdef _WIN32
 #include <windows.h>
@@ -92,6 +93,127 @@ Json snapshot(const fs::path &root) {
   }
   return out;
 }
+
+void directory_tests(const fs::path &root) {
+  const Directory parent(root);
+  parent.create_private("directory-api");
+  const auto directory = parent.child("directory-api");
+  directory.write_text("data", "original");
+  const auto bytes = directory.read("data", 64);
+  expect(std::string(bytes.begin(), bytes.end()) == "original",
+         "Anchored read/write");
+  expect(directory.entries().size() == 1 && directory.entries().size() == 1,
+         "Independent directory enumeration offsets");
+  expect(directory_inventory(directory) == Json{{"data", sha256(bytes)}},
+         "Anchored inventory");
+  for (const auto &name :
+       {"", ".", "..", "../data", "sub/file", "sub\\file", "C:data"}) {
+    rejects([&] { (void)directory.read(name, 64); }, "Anchored read traversal");
+    rejects([&] { directory.write_text(name, "unexpected"); },
+            "Anchored write traversal");
+  }
+  {
+    const auto lock = directory.lock("test.lock");
+    rejects([&] { (void)directory.lock("test.lock"); },
+            "Anchored concurrent lock");
+  }
+  directory.create_private("child");
+  rejects([&] { directory.replace("child", "invalid journal"); },
+          "Anchored journal cannot replace directory");
+  expect(directory.entries().size() == 3,
+         "Anchored journal failure left temporary file");
+#ifndef _WIN32
+  const auto original = root / "directory-api";
+  const auto displaced = root / "displaced-api";
+  const auto before_move = directory_inventory(directory);
+  fs::rename(original, displaced);
+  create_private_dir(original);
+  write_text(original / "sentinel", "replacement");
+  const auto replacement = snapshot(original);
+  rejects([&] { directory.verify_location(); }, "Changed directory identity");
+  expect(directory_inventory(directory) == before_move,
+         "Inventory reopened a replacement directory");
+  directory.replace("data", "anchored update");
+  expect(snapshot(original) == replacement,
+         "Anchored journal wrote into replacement directory");
+  const auto updated = directory.read("data", 64);
+  expect(std::string(updated.begin(), updated.end()) == "anchored update",
+         "Anchored journal did not update original directory");
+  {
+    const auto first = directory.lock("test.lock");
+    rejects([&] { (void)directory.lock("test.lock"); },
+            "Renamed directory lost lock identity");
+  }
+  fs::create_symlink(original / "sentinel", displaced / "link");
+  rejects([&] { (void)directory_inventory(directory); },
+          "Anchored inventory followed link");
+  fs::remove(displaced / "link");
+#endif
+}
+
+#ifndef _WIN32
+void transaction_binding_tests(const fs::path &root) {
+  unsigned index = 0;
+  for (const bool restoring : {false, true}) {
+    const std::vector<std::string> phases =
+        restoring
+            ? std::vector<std::string>{"restore_validated",
+                                       "restore_current_moved",
+                                       "restore_backup_moved"}
+            : std::vector<std::string>{"prepared", "old_renamed", "old_moved",
+                                       "new_renamed", "new_moved"};
+    for (const bool replace_parent : {true, false}) {
+      for (const auto &phase : phases) {
+        const auto test =
+            root / ("transaction-binding-" + std::to_string(++index));
+        create_private_dir(test);
+        const auto profile = test / "profile";
+        create_private_dir(profile);
+        const auto target = profile / "WidevineCdm";
+        install_cdm(target, fixture("1.2.3.4"));
+        if (restoring) install_cdm(target, fixture("2.0.0.0"));
+        const auto original =
+            replace_parent ? profile : profile / ".helium-drm-fixer";
+        const auto displaced = replace_parent ? test / "original-profile"
+                                              : profile / "original-state";
+        Json replacement;
+        bool injected = false, rejected = false;
+        const InstallHooks hooks{{[&](const std::string &current) {
+          if (current != phase) return;
+          fs::rename(original, displaced);
+          if (replace_parent) {
+            create_private_dir(profile);
+            install_cdm(target, fixture("9.9.9.9"));
+          } else {
+            fs::copy(displaced, original, fs::copy_options::recursive);
+          }
+          replacement = snapshot(original);
+          injected = true;
+        }}};
+        try {
+          if (restoring)
+            restore_cdm(target, hooks);
+          else
+            install_cdm(target, fixture("2.0.0.0"), hooks);
+        } catch (const Error &error) {
+          rejected = error.code == Code::recovery;
+        }
+        expect(injected && rejected, "Directory replacement was not detected");
+        expect(snapshot(original) == replacement,
+               "Rollback changed replacement directory or its journal");
+        const auto preserved = test / "untouched-replacement";
+        fs::rename(original, preserved);
+        fs::rename(displaced, original);
+        if (restoring) restore_cdm(target);
+        expect(read_cdm(installed_cdm_dir(target)).version == "1.2.3.4",
+               "Rollback did not restore original installation through "
+               "anchored directories");
+        expect(!has_transaction(target), "Anchored rollback remains pending");
+      }
+    }
+  }
+}
+#endif
 }  // namespace
 int main(int argc, char **argv) {
   try {
@@ -147,6 +269,17 @@ int main(int argc, char **argv) {
       expect(snapshot(root) == before_write_failure,
              "Failed journal write changed original or left a partial "
              "temporary file");
+      {
+        const Directory directory(root);
+        rejects(
+            [&] {
+              directory.replace("journal.json", std::string(128 * 1024, 'x'));
+            },
+            "Anchored journal write must report real ENOSPC");
+        expect(
+            snapshot(root) == before_write_failure,
+            "Anchored journal write changed original or left a temporary file");
+      }
       fs::remove(root / "journal.json");
       fs::remove(root);
       std::cout
@@ -375,6 +508,10 @@ int main(int argc, char **argv) {
     const auto root = fs::absolute(fs::temp_directory_path() /
                                    ("helium-fixer-test-" + random_id()));
     create_private_dir(root);
+    directory_tests(root);
+#ifndef _WIN32
+    transaction_binding_tests(root);
+#endif
     const auto target = root / "WidevineCdm";
     write_file(root / "prefix-test", Bytes(128, 7));
     rejects([&] { (void)read_file(root / "prefix-test", 64); },

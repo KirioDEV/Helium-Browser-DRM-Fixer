@@ -109,6 +109,11 @@ angeben. Nach einem Abbruch verweigert eine neue Installation den Start, bis die
 Wiederherstellung abgeschlossen ist. Hat sich der Inhalt des Backups oder der
 aktuellen Installation verändert, erfolgt keine automatische Überschreibung.
 
+Wird während Installation oder Restore ein Eltern- oder Verwaltungsordner
+verschoben bzw. ersetzt, wird abgebrochen. Vor einem weiteren Restore zuerst
+die ursprüngliche Pfadzuordnung klären. Fremde Ersatzordner werden nicht
+automatisch zurückverschoben oder überschrieben.
+
 Die letzte Transaktion ist über `--restore` erreichbar. Frühere Journale und
 Backups bleiben zur manuellen Wiederherstellung erhalten. Es gibt bewusst keine
 automatische Backup-Löschung; sie können Speicherplatz belegen.

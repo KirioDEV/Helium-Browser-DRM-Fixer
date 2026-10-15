@@ -188,7 +188,7 @@ struct InstallHooks {
 void install_cdm(const fs::path &target, const Cdm &cdm,
                  const InstallHooks &hooks = {});
 
-void restore_cdm(const fs::path &target);
+void restore_cdm(const fs::path &target, const InstallHooks &hooks = {});
 
 fs::path installed_cdm_dir(const fs::path &target);
 
