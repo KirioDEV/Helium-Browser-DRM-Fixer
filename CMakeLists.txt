@@ -57,6 +57,7 @@ endif()
 add_executable(helium_drm_fixer main.cpp)
 target_link_libraries(helium_drm_fixer PRIVATE fixer_core)
 include(CTest)
+option(FIXER_REQUIRE_NETWORK_TESTS "Require Python/OpenSSL and native HTTPS test target" OFF)
 if(BUILD_TESTING)
     add_executable(fixer_tests tests/tests.cpp)
     target_link_libraries(fixer_tests PRIVATE fixer_core miniz)
@@ -65,13 +66,37 @@ if(BUILD_TESTING)
     find_package(Python3 COMPONENTS Interpreter)
     if(Python3_Interpreter_FOUND)
         add_test(NAME process_crash_recovery COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/crash_recovery.py" "$<TARGET_FILE:fixer_tests>")
+        find_program(FIXER_OPENSSL_EXECUTABLE NAMES openssl
+            HINTS "C:/Program Files/Git/mingw64/bin" "C:/Program Files/Git/usr/bin")
+        if(FIXER_OPENSSL_EXECUTABLE)
+            # Compile the native transport separately: fixture routing/trust must
+            # never be enabled in fixer_core or the installed executable.
+            add_executable(fixer_network_tests tests/network_probe.cpp src/network.cpp)
+            target_compile_definitions(fixer_network_tests PRIVATE FIXER_NETWORK_TESTING)
+            target_include_directories(fixer_network_tests PRIVATE tests)
+            target_link_libraries(fixer_network_tests PRIVATE fixer_core)
+            if(NOT WIN32)
+                target_link_libraries(fixer_network_tests PRIVATE CURL::libcurl)
+            endif()
+            add_test(NAME native_https_failures COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_SOURCE_DIR}/tests/network_integration.py"
+                --probe "$<TARGET_FILE:fixer_network_tests>"
+                --production "$<TARGET_FILE:helium_drm_fixer>"
+                --openssl "${FIXER_OPENSSL_EXECUTABLE}")
+            set_tests_properties(native_https_failures PROPERTIES TIMEOUT 120)
+        else()
+            message(WARNING "OpenSSL executable missing: native HTTPS integration tests unavailable")
+        endif()
     endif()
+endif()
+if(FIXER_REQUIRE_NETWORK_TESTS AND NOT TARGET fixer_network_tests)
+    message(FATAL_ERROR "Native HTTPS tests require BUILD_TESTING=ON, Python3 and the OpenSSL executable")
 endif()
 if(MINGW)
     # CLion's bundled MinGW runtime is shipped alongside the executable.
     get_filename_component(MINGW_BIN "${CMAKE_CXX_COMPILER}" DIRECTORY)
     foreach(runtime libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll)
-        foreach(target helium_drm_fixer fixer_tests)
+        foreach(target helium_drm_fixer fixer_tests fixer_network_tests)
             if(TARGET ${target} AND EXISTS "${MINGW_BIN}/${runtime}")
                 add_custom_command(TARGET ${target} POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different
                     "${MINGW_BIN}/${runtime}" "$<TARGET_FILE_DIR:${target}>")

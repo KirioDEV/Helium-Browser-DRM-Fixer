@@ -130,8 +130,8 @@ die Unterstützung für ClangFormat aktivieren. Zum Formatieren und Prüfen
 mit `clang-format` im PATH:
 
 ```sh
-clang-format -i main.cpp include/fixer.hpp src/*.cpp tests/*.cpp
-clang-format --dry-run --Werror main.cpp include/fixer.hpp src/*.cpp tests/*.cpp
+clang-format -i main.cpp include/*.hpp src/*.cpp tests/*.hpp tests/*.cpp
+clang-format --dry-run --Werror main.cpp include/*.hpp src/*.cpp tests/*.hpp tests/*.cpp
 ```
 
 Die Tests verwenden künstliche CDM-Dateien in temporären Verzeichnissen.
@@ -139,6 +139,18 @@ Sie laden keine Bibliothek in einen Prozess und verändern keine reale
 Helium-Installation. Zusätzlich werden Prozessabbrüche an fünf
 Transaktionsgrenzen getestet. Der Clang-Fuzz-Harness prüft die Parser mit
 AddressSanitizer/UndefinedBehaviorSanitizer.
+
+Für die lokalen HTTPS-Integrationstests werden zusätzlich Python und das
+OpenSSL-Kommando benötigt; unter Windows wird auch Git for Windows als
+Installationsort von OpenSSL berücksichtigt. Die Tests prüfen Zertifikatsfehler,
+Weiterleitungen, Antwortgrößen, abgeschnittene Antworten, Zeitlimits und Abbruch.
+Es werden keine Test-Zertifikate in den System-Vertrauensspeicher importiert.
+Die dafür separat gebaute `fixer_network_tests`-Datei wird nicht mit installiert.
+Die normale EXE enthält keine Loopback- oder Test-Zertifikatskonfiguration.
+
+Mit `-DFIXER_REQUIRE_NETWORK_TESTS=ON` schlägt die CMake-Konfiguration fehl,
+wenn diese Testvoraussetzungen fehlen. CI und Docker-Testskript verlangen diese
+Prüfungen; beim normalen lokalen Build werden fehlende Voraussetzungen gemeldet.
 
 Die Fehlerfalltests prüfen außerdem Abbruch mit Rollback, manipulierte Backups
 und Journale, Hardlinks sowie unter Windows gesperrte DLLs. Für Linux gibt es

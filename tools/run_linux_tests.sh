@@ -8,13 +8,13 @@ if [ "$fuzz_seconds" -lt 1 ] || [ "$fuzz_seconds" -gt 3600 ]; then
     echo 'FIXER_FUZZ_SECONDS must be an integer from 1 to 3600' >&2
     exit 2
 fi
-cmake -S /source -B /build/gcc -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON
+cmake -S /source -B /build/gcc -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON -DFIXER_REQUIRE_NETWORK_TESTS=ON
 cmake --build /build/gcc --parallel 4
 ctest --test-dir /build/gcc --output-on-failure
 if [ -f /source/.deps/widevine-linux.crx3 ]; then
     /build/gcc/fixer_tests --verify-package /source/.deps/widevine-linux.crx3
 fi
-cmake -S /source -B /build/clang -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON \
+cmake -S /source -B /build/clang -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON -DFIXER_REQUIRE_NETWORK_TESTS=ON \
     -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DFIXER_SANITIZERS=ON -DFIXER_FUZZING=ON
 cmake --build /build/clang --parallel 4
 ctest --test-dir /build/clang --output-on-failure
