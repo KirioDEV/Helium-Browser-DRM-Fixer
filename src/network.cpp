@@ -6,6 +6,7 @@
 #include <mutex>
 #include <optional>
 #include <set>
+#include <string_view>
 #include <thread>
 
 #include "app_update.hpp"
@@ -844,6 +845,76 @@ HttpResponse app_release_request() {
       });
 }
 
+Bytes app_asset_request_with_transport(const AppUpdateAsset &asset,
+                                       const HttpTransport &transport) {
+  check_cancelled();
+  const auto prefix = "https://github.com/" +
+                      std::string(app_update_repository) +
+                      "/releases/download/";
+  require(asset.url.starts_with(prefix), "Foreign app asset source");
+  const auto slash = asset.url.find('/', prefix.size());
+  require(slash != std::string::npos, "Missing app asset tag");
+  auto tag = asset.url.substr(prefix.size(), slash - prefix.size());
+  if (tag.starts_with('v')) tag.erase(0, 1);
+  const auto name = app_package_name(tag);
+  const auto filename = asset.url.substr(slash + 1);
+  std::uint64_t maximum = 0;
+  if (filename == name) maximum = 128 * 1024 * 1024;
+  if (filename == name + ".manifest.json") maximum = 65536;
+  if (filename == name + ".manifest.sig") maximum = 512;
+  require(maximum && asset.size > 0 && asset.size <= maximum,
+          "Invalid app asset name/size");
+  Url url{"github.com", asset.url.substr(18)};
+  for (unsigned hop = 0; hop <= 1; ++hop) {
+    check_cancelled();
+    // A redirect may carry a small HTML body even for a tiny signature asset.
+    const auto limit = hop == 0 ? std::max<std::size_t>(8192, asset.size)
+                                : static_cast<std::size_t>(asset.size);
+    auto response = transport(url, "", limit);
+    check_cancelled();
+    require(response.bytes.size() <= limit, "App asset response too large");
+    if (response.status == 302 && hop == 0) {
+      require(response.bytes.size() <= 8192, "App redirect body too large");
+      constexpr std::string_view host =
+          "https://release-assets.githubusercontent.com";
+      const auto &location = response.location;
+      require(location.size() <= 4096 &&
+                  location.starts_with(std::string(host) +
+                                       "/github-production-release-asset/"),
+              "Unapproved app asset redirect");
+      for (const char raw : location) {
+        const auto c = static_cast<unsigned char>(raw);
+        require(c > 32 && c < 127 && c != '\\' && c != '#',
+                "Invalid app redirect character");
+      }
+      url = {"release-assets.githubusercontent.com",
+             location.substr(host.size())};
+      continue;
+    }
+    require(response.status == 200,
+            "App asset HTTP status " + std::to_string(response.status),
+            response.status >= 300 && response.status < 400 ? Code::security
+                                                            : Code::failure);
+    require(response.bytes.size() == asset.size, "App asset size mismatch");
+    return response.bytes;
+  }
+  throw Error("Too many app asset redirects", Code::security);
+}
+
+PreparedAppUpdate prepare_app_update(const fs::path &parent) {
+  require(app_update_key_configured(),
+          "App update signing key is not configured");
+  const RequestContext context{std::chrono::steady_clock::now() +
+                               std::chrono::seconds(120)};
+  const HttpTransport transport = [&](const Url &url, const std::string &body,
+                                      std::size_t limit) {
+    return request_once(url, body, limit, context);
+  };
+  const auto download = parse_app_update_download(
+      app_release_request_with_transport(transport), FIXER_VERSION);
+  return prepare_app_update_with_transport(download, parent, transport);
+}
+
 Bytes http_request(const std::string &url, const std::string &body,
                    std::size_t limit, bool update) {
   const RequestContext context{std::chrono::steady_clock::now() +
@@ -881,6 +952,14 @@ Bytes testing::network_request(const NetworkSettings &settings,
              return request_once(parsed, payload, maximum, context);
            })
         .bytes;
+  }
+  if (settings.app_asset) {
+    require(body.empty() && !update, "Invalid app asset fixture request");
+    return app_asset_request_with_transport(
+        {url, limit}, [&](const Url &parsed, const std::string &payload,
+                          std::size_t maximum) {
+          return request_once(parsed, payload, maximum, context);
+        });
   }
   return request_with_transport(
       url, body, limit, update,

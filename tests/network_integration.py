@@ -64,7 +64,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.server.hosts.append(self.headers.get("Host"))
         self.close_connection = True
         try:
-            if self.path in ("/stall", "/cancel"):
+            if self.path.startswith("/KirioDEV/Helium-Browser-DRM-Fixer/releases/download/"):
+                location = getattr(self.server, "asset_redirect", None)
+                if location is not None:
+                    self.send_response(302)
+                    self.send_header("Location", location)
+                    self.send_header("Content-Length", "100")
+                    self.end_headers()
+                    self.wfile.write(b"x" * 100)
+                    return
+            if self.path in ("/stall", "/cancel", "/github-production-release-asset/123/cancel"):
                 time.sleep(3)
                 return
             if self.path.startswith("/budget/"):
@@ -161,7 +170,7 @@ def main():
                 "/CN=dl.google.com", "-keyout", "leaf.key", "-out", "leaf.csr")
         openssl("req", "-new", "-key", "leaf.key", "-subj", "/CN=127.0.0.1",
                 "-out", "ip-only.csr")
-        for name, san, days in (("valid", "DNS:dl.google.com,DNS:update.googleapis.com,DNS:api.github.com,IP:127.0.0.1", "1"),
+        for name, san, days in (("valid", "DNS:dl.google.com,DNS:update.googleapis.com,DNS:api.github.com,DNS:github.com,DNS:release-assets.githubusercontent.com,IP:127.0.0.1", "1"),
                                 ("wrong-host", "DNS:wrong.example", "1"),
                                 ("expired", "DNS:dl.google.com,IP:127.0.0.1", "0"),
                                 ("ip-only", "IP:127.0.0.1", "1")):
@@ -178,10 +187,12 @@ def main():
         passed = 0
 
         def exercise(name, path, expected_code=0, *, certificate="valid", trust=True,
-                     expected_paths=None, maximum_ms=4000, release_status=200, **options):
+                     expected_paths=None, expected_hosts=None, maximum_ms=4000,
+                     release_status=200, asset_redirect=None, **options):
             nonlocal passed
             server = Server(root / f"{certificate}-chain.pem", root / "leaf.key")
             server.release_status = release_status
+            server.asset_redirect = asset_redirect
             try:
                 peer = hashlib.sha256(ssl.PEM_cert_to_DER_cert(
                     (root / f"{certificate}.pem").read_text(encoding="ascii"))).hexdigest()
@@ -205,11 +216,13 @@ def main():
                 if expected_paths is not None and server.requests != expected_paths:
                     raise RuntimeError(f"{name}: unexpected requests: {server.requests}")
                 if expected_paths:
-                    host = ("api.github.com" if config.get("app_release") else
+                    host = ("github.com" if config.get("app_asset") else
+                            "api.github.com" if config.get("app_release") else
                             "update.googleapis.com" if config.get("update") else "dl.google.com")
-                    if any(value.split(":", 1)[0] != host for value in server.hosts):
+                    hosts = expected_hosts or [host] * len(expected_paths)
+                    if [value.split(":", 1)[0] for value in server.hosts] != hosts:
                         raise RuntimeError(f"{name}: IP pinning changed Host: {server.hosts}")
-                    if not server.server_names or any(value != host for value in server.server_names):
+                    if not server.server_names or server.server_names != hosts:
                         raise RuntimeError(f"{name}: IP pinning changed TLS SNI: {server.server_names}")
                 passed += 1
                 print(f"{name}: passed ({response['elapsed_ms']} ms)", flush=True)
@@ -233,6 +246,34 @@ def main():
                  dns_answers=[["127.0.0.1"]], expected_paths=[], **app_options)
         exercise("CDM policy still rejects GitHub", app_path, 4,
                  url=f"https://api.github.com{app_path}", expected_paths=[])
+        platform = "windows-x64" if sys.platform == "win32" else "linux-x86_64-ubuntu24.04"
+        asset_path = f"/KirioDEV/Helium-Browser-DRM-Fixer/releases/download/v1.2.3/helium-drm-fixer-cpp-1.2.3-{platform}.zip"
+        asset_options = {"app_asset": True, "url": f"https://github.com{asset_path}", "limit": 7}
+        cdn_path = "/github-production-release-asset/123/test?token=fixture"
+        cdn_url = f"https://release-assets.githubusercontent.com{cdn_path}"
+        exercise("app asset direct HTTPS", asset_path, expected_paths=[asset_path], **asset_options)
+        exercise("app asset CDN redirect Host/SNI", asset_path,
+                 asset_redirect=cdn_url, expected_paths=[asset_path, cdn_path],
+                 expected_hosts=["github.com", "release-assets.githubusercontent.com"], **asset_options)
+        exercise("app asset foreign redirect", asset_path, 4,
+                 asset_redirect="https://evil.example/file", expected_paths=[asset_path], **asset_options)
+        exercise("app asset CA validation", asset_path, 1, trust=False,
+                 expected_paths=[], **asset_options)
+        exercise("app asset hostname validation", asset_path, 1, certificate="wrong-host",
+                 expected_paths=[], **asset_options)
+        exercise("app asset private DNS", asset_path, 4,
+                 dns_answers=[["127.0.0.1"]], expected_paths=[], **asset_options)
+        exercise("app asset CDN private DNS", asset_path, 4,
+                 asset_redirect=cdn_url, dns_answers=[["8.8.8.8"], ["127.0.0.1"]],
+                 expected_paths=[asset_path], **asset_options)
+        exercise("app asset response length mismatch", asset_path, 4,
+                 **{**asset_options, "limit": 8})
+        exercise("app asset redirect shares DNS deadline", asset_path, 1,
+                 asset_redirect=cdn_url, dns_delay_ms=200, total_ms=350,
+                 expected_paths=[asset_path], maximum_ms=1500, **asset_options)
+        exercise("app asset cancellation on CDN", asset_path, 130,
+                 asset_redirect="https://release-assets.githubusercontent.com/github-production-release-asset/123/cancel",
+                 cancel_after_ms=250, maximum_ms=1500, **asset_options)
         if sys.platform == "win32":
             exercise("fixture peer pin mismatch", "/ok", 4, peer_sha256="0" * 64)
         exercise("untrusted CA", "/ok", 1, trust=False, expected_paths=[])

@@ -230,6 +230,120 @@ void app_update_tests() {
   expect(stopped && requests == 1, "Cancelled app checker started a request");
   expect(parse_options({"--check-app-update", "--json"}).check_app_update,
          "App update mode or JSON option missing");
+  auto signed_metadata = metadata;
+  for (const auto &suffix : {".manifest.json", ".manifest.sig"}) {
+    auto asset = metadata["assets"][0];
+    asset["name"] = package + suffix;
+    asset["browser_download_url"] =
+        asset["browser_download_url"].get<std::string>() + suffix;
+    asset["size"] = std::string(suffix).ends_with("sig") ? 384u : 100u;
+    signed_metadata["assets"].push_back(asset);
+  }
+  const auto plan =
+      parse_app_update_download(response(signed_metadata), "1.0.0");
+  expect(plan.version == "1.10.0" && plan.package.size == 123 &&
+             plan.signature.size == 384 && plan.manifest.size == 100,
+         "Signed app asset plan mismatch");
+  rejects([&] { (void)parse_app_update_download(response(metadata), "1.0.0"); },
+          "Unsigned app release accepted for download");
+  for (unsigned change = 0; change < 8; ++change) {
+    auto bad = signed_metadata;
+    if (change == 0) bad["assets"].push_back(bad["assets"][1]);
+    if (change == 1) bad["assets"][1]["size"] = 65537u;
+    if (change == 2) bad["assets"][2]["size"] = 383u;
+    if (change == 3) bad["assets"][2]["size"] = -1;
+    if (change == 4) bad["assets"][1]["state"] = "open";
+    if (change == 5)
+      bad["assets"][1]["browser_download_url"] = "https://evil.example/key";
+    if (change == 6) bad["assets"][1].erase("size");
+    if (change == 7) bad["assets"][1]["size"] = 1.0;
+    rejects([&] { (void)parse_app_update_download(response(bad), "1.0.0"); },
+            "Invalid signed app asset plan");
+  }
+  rejects(
+      [&] {
+        (void)parse_app_update_download(response(signed_metadata), "2.0.0");
+      },
+      "Download offered a downgrade");
+  const AppUpdateAsset asset{plan.package.url, 7};
+  const Bytes payload{'f', 'i', 'x', 't', 'u', 'r', 'e'};
+  const std::string cdn =
+      "https://release-assets.githubusercontent.com/"
+      "github-production-release-asset/123/file?token=fixture";
+  requests = 0;
+  expect(app_asset_request_with_transport(
+             asset,
+             [&](const Url &url, const std::string &body, std::size_t limit) {
+               ++requests;
+               expect(body.empty() && limit == (requests == 1 ? 8192u : 7u),
+                      "App asset request has wrong body/limit");
+               if (requests == 1) {
+                 expect("https://" + url.host + url.path == asset.url,
+                        "Wrong initial app asset URL");
+                 return HttpResponse{302, Bytes(100, 'x'), cdn};
+               }
+               expect("https://" + url.host + url.path == cdn,
+                      "Wrong app CDN URL");
+               return HttpResponse{200, payload, {}};
+             }) == payload &&
+             requests == 2,
+         "App CDN redirect failed");
+  for (const auto &location :
+       {"https://evil.example/file", "http://github.com/file", "/relative",
+        "https://release-assets.githubusercontent.com.evil.example/"
+        "github-production-release-asset/file",
+        "https://release-assets.githubusercontent.com/"
+        "github-production-release-asset/file#fragment",
+        "https://release-assets.githubusercontent.com/other/file"}) {
+    requests = 0;
+    rejects(
+        [&] {
+          (void)app_asset_request_with_transport(
+              asset, [&](const Url &, const std::string &, std::size_t) {
+                ++requests;
+                return HttpResponse{302, {}, location};
+              });
+        },
+        "Unapproved app asset redirect");
+    expect(requests == 1, "Unapproved app redirect was requested");
+  }
+  rejects(
+      [&] {
+        (void)app_asset_request_with_transport(
+            asset, [&](const Url &, const std::string &, std::size_t) {
+              return HttpResponse{302, {}, cdn};
+            });
+      },
+      "App redirect loop");
+  for (const auto size : {6u, 8u})
+    rejects(
+        [&] {
+          (void)app_asset_request_with_transport(
+              asset, [&](const Url &, const std::string &, std::size_t) {
+                return HttpResponse{200, Bytes(size), {}};
+              });
+        },
+        "Wrong app response size");
+  rejects(
+      [&] {
+        (void)app_asset_request_with_transport(
+            asset, [&](const Url &, const std::string &, std::size_t) {
+              return HttpResponse{302, Bytes(8193), cdn};
+            });
+      },
+      "Oversized app redirect body");
+  requests = 0;
+  rejects(
+      [&] {
+        (void)app_asset_request_with_transport(
+            {"https://evil.example/file", 7},
+            [&](const Url &, const std::string &, std::size_t) {
+              ++requests;
+              return HttpResponse{};
+            });
+      },
+      "Foreign app asset URL");
+  expect(requests == 0, "Foreign app asset reached transport");
 }
 
 void operation_progress_tests(const fs::path &root) {
@@ -885,6 +999,53 @@ int main(int argc, char **argv) {
     }
     if (argc == 3 && std::string(argv[1]) == "--create-private-app-staging") {
       create_private_dir(from_utf8(argv[2]), true);
+      return 0;
+    }
+    if (argc == 3 && std::string(argv[1]) == "--download-app-fixture") {
+      const auto configuration = read_file(from_utf8(argv[2]), 65536);
+      const auto config =
+          parse_json(std::string(configuration.begin(), configuration.end()));
+      const auto release = read_file(
+          from_utf8(config.at("release").get<std::string>()), 1024 * 1024);
+      Json requests = Json::array();
+      const HttpTransport transport =
+          [&](const Url &url, const std::string &body, std::size_t limit) {
+            require(body.empty(), "Unexpected fixture download body");
+            const auto full = "https://" + url.host + url.path;
+            requests.push_back(full);
+            return HttpResponse{
+                200,
+                read_file(
+                    from_utf8(config.at("assets").at(full).get<std::string>()),
+                    limit),
+                {}};
+          };
+      try {
+        cancelled = config.value("cancelled", false);
+        const auto plan = parse_app_update_download(
+            {200, release, {}}, config.value("installed", "0.1.0"));
+        const auto parent = from_utf8(config.at("parent").get<std::string>());
+        const auto result =
+            config.value("compiled_trust", false)
+                ? prepare_app_update_with_transport(plan, parent, transport)
+                : prepare_app_update_with_trusted_key(
+                      plan, parent, transport,
+                      read_file(from_utf8(config.at("key").get<std::string>()),
+                                1024));
+        expect(result.signed_manifest ==
+                   read_file(from_utf8(config.at("assets")
+                                           .at(plan.manifest.url)
+                                           .get<std::string>()),
+                             65536),
+               "Prepared manifest bytes changed");
+        std::cout << Json{{"directory", utf8(result.directory)},
+                          {"requests", requests}}
+                         .dump()
+                  << '\n';
+      } catch (...) {
+        std::cout << Json{{"requests", requests}}.dump() << '\n';
+        throw;
+      }
       return 0;
     }
     if ((argc == 7 && std::string(argv[1]) == "--verify-app-package") ||

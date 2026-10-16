@@ -161,6 +161,54 @@ def main():
             for destination, data in zip(paths, (original_package, original_manifest, original_signature)):
                 destination.write_bytes(data)
 
+        download_release = root / "download release.json"
+        download_config = root / "download config.json"
+        base = "https://github.com/KirioDEV/Helium-Browser-DRM-Fixer/releases/download/v1.2.3/"
+        urls = [base + path.name for path in paths]
+        download_metadata = {"tag_name": "v1.2.3", "draft": False, "prerelease": False,
+                             "html_url": "https://github.com/KirioDEV/Helium-Browser-DRM-Fixer/releases/tag/v1.2.3",
+                             "assets": [{"name": path.name, "state": "uploaded", "size": path.stat().st_size,
+                                         "browser_download_url": url} for path, url in zip(paths, urls)]}
+
+        def download_case(name, *, accepted=False, expected_requests=(), metadata=None, **options):
+            nonlocal passed
+            before = set(stage_parent.iterdir())
+            download_release.write_text(json.dumps(download_metadata if metadata is None else metadata), encoding="utf-8")
+            download_config.write_text(json.dumps({"release": str(download_release), "parent": str(stage_parent),
+                                                   "key": str(public), "assets": {url: str(path) for path, url in zip(paths, urls)},
+                                                   **options}), encoding="utf-8")
+            result = subprocess.run([str(helper), "--download-app-fixture", str(download_config)],
+                                    capture_output=True, timeout=15)
+            status = json.loads(result.stdout)
+            if (result.returncode == 0) != accepted or status["requests"] != list(expected_requests):
+                raise RuntimeError(f"{name}: unexpected download result {result.returncode}: {status}: {result.stderr!r}")
+            if not accepted and set(stage_parent.iterdir()) != before:
+                raise RuntimeError(f"{name}: failed download changed staging parent")
+            if accepted and not Path(status["directory"]).is_dir():
+                raise RuntimeError(f"{name}: did not publish prepared package")
+            passed += 1
+            print(f"{name}: passed", flush=True)
+
+        sequence = (urls[1], urls[2], urls[0])
+        download_case("verified download to private staging", accepted=True, expected_requests=sequence)
+        download_case("untrusted download stops before package", key=str(other_public), expected_requests=sequence[:2])
+        signature.write_bytes(original_signature[:-1] + bytes([original_signature[-1] ^ 1]))
+        download_case("invalid signature stops before package", expected_requests=sequence[:2])
+        signature.write_bytes(original_signature)
+        changed_metadata = json.loads(json.dumps(download_metadata))
+        changed_metadata["assets"][0]["size"] += 1
+        download_case("advertised package size must match signature", metadata=changed_metadata, expected_requests=sequence[:2])
+        package.write_bytes(original_package[:-1] + bytes([original_package[-1] ^ 1]))
+        download_case("corrupt package is never staged", expected_requests=sequence)
+        package.write_bytes(original_package)
+        changed_metadata = json.loads(json.dumps(download_metadata))
+        changed_metadata["assets"].pop()
+        download_case("unsigned release triggers no asset requests", metadata=changed_metadata)
+        download_case("current app triggers no asset requests", installed="1.2.3")
+        download_case("cancelled preparation triggers no asset requests", cancelled=True)
+        if command([str(helper), "--app-update-trust"]).strip() == b"disabled":
+            download_case("unconfigured trust triggers no asset requests", compiled_trust=True)
+
         def verify(name, *, trust=public, expected="1.2.3", accepted=True):
             nonlocal passed
             result = subprocess.run([str(helper), "--verify-app-package", str(manifest),

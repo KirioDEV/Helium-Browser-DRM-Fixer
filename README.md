@@ -250,9 +250,9 @@ ungültige Metadaten und Abbruch bleiben Fehler und werden nicht als „aktuell�
 ausgegeben. Fehler vor einem Prüfergebnis nutzen den normalen Fehlerpfad.
 
 `--update-app` und die eigentliche Selbstinstallation sind **noch nicht
-implementiert**. Lokale Paketerzeugung, Signaturprüfung und geprüftes Entpacken
-im Arbeitsspeicher und geschütztes Staging sind vorbereitet; Download und
-Austausch mit Rückfallmöglichkeit folgen noch.
+implementiert**. Paketerzeugung, Signaturprüfung, geprüftes Entpacken,
+Download und privates Staging sind als gemeinsame C++-Schnittstellen vorhanden.
+Austausch mit Rückfallmöglichkeit und der CLI-Befehl folgen noch.
 Die spätere GUI soll beim Start im Hintergrund prüfen,
 unten rechts ihre App-Version und bei einem Update einen `Aktualisieren`-Knopf
 anzeigen. Installation erfolgt nach einem ausdrücklichen Befehl oder Klick.
@@ -323,6 +323,26 @@ umbenannten Ordner bei einem anschließenden Synchronisierungsfehler.
 Ein `.ready`-Name erlaubt keine Installation: Signatur und Dateien müssen vor
 einem späteren Austausch erneut geprüft werden. Das laufende Programm wird
 durch diesen Vorbereitungsschritt weder ersetzt noch gestartet.
+`prepare_app_update` verbindet die feste Release-Abfrage mit Download und
+Staging. Die Release-Metadaten müssen ein neueres Paket, dessen Manifest und
+Signatur mit exakten Dateinamen, Download-URLs und begrenzten Größen enthalten.
+Alle Start-URLs müssen zum festgelegten Repository unter `github.com` gehören.
+Es ist genau eine HTTP-302-Weiterleitung auf
+`release-assets.githubusercontent.com/github-production-release-asset/…`
+zulässig; andere Ziele oder weitere Weiterleitungen werden abgelehnt.
+Ein mitgelieferter Weiterleitungs-Body ist auf 8 KiB begrenzt; endgültige
+Dateien müssen exakt ihrer angekündigten Größe entsprechen.
+TLS-Zertifikate und öffentliche DNS-Adressen werden für beide Hosts geprüft,
+die Verbindung bleibt an die geprüfte Adresse gebunden. Es gibt keine Proxy-
+oder Token-Unterstützung. Für Metadaten und alle Downloads gilt ein gemeinsames
+Netzwerkbudget von 120 Sekunden.
+
+Manifest (höchstens 64 KiB) und Signatur (384/512 Bytes) werden zuerst geladen.
+Erst nach gültiger Signatur und Übereinstimmung der signierten mit der
+angekündigten Paketgröße wird das ZIP geladen (höchstens 128 MiB).
+Ohne eingebauten öffentlichen Schlüssel beginnt die Anwendung keine dieser
+Vorbereitungsanfragen. Das Ergebnis enthält den Staging-Pfad sowie die exakten
+signierten Manifest-/Signaturbytes für die spätere erneute Prüfung.
 Der Release-Check lädt diese Signaturdateien noch nicht nach;
 seine JSON-Felder `package_verified` und `self_install_supported` bleiben `false`.
 Die CI erhält keinen privaten Schlüssel und erzeugt weiterhin nur Kandidaten.
@@ -420,8 +440,8 @@ Program Files einschließlich `ProgramW6432`, Benutzer- und Cachepfade sind dabe
 auf temporäre Fixtures gesetzt. Unter Linux prüfen fünf Szenarien die
 Optionskonflikte und die Beibehaltung der profilbezogenen Zielauswahl.
 
-Eine siebte CTest-Gruppe prüft 60 Releasefälle unter Windows beziehungsweise
-61 unter Linux mit kurzlebigen Testschlüsseln:
+Eine weitere CTest-Gruppe prüft 69 Releasefälle unter Windows beziehungsweise
+70 unter Linux mit kurzlebigen Testschlüsseln:
 RSA-3072/4096, falsche/zu schwache/EC-Schlüssel, Signatur-Kontext, manipulierte
 Manifeste und ZIPs, Plattform-/Versionsbindung, Inventar-/Pfadfehler, unveränderte
 Ausgaben bei abgelehnten Aufrufen und verschlüsselte Schlüssel. Erneut signierte
@@ -430,6 +450,10 @@ CRC-/Dateihashfehler, Binärformate sowie gespeicherte und leere Dateien. Die sy
 Staging-Fälle prüfen zudem private Rechte, getrennte Vorbereitungen, den Erhalt
 bestehender Dateien und Ablehnung von Abbruch, beschädigten Paketen sowie
 fehlenden, relativen, verlinkten oder unter Linux nicht privaten Elternordnern.
+Der vollständige Downloadablauf wird mit einem kontrollierten Transport geprüft:
+gültige Pakete erreichen das Staging, falsche Schlüssel/Signaturen stoppen vor
+dem Paketdownload, beschädigte Pakete vor dem Schreiben. Fehlende Signaturen,
+veraltete Versionen, Abbruch und fehlender Vertrauensanker lösen keine Asset-Anfragen aus.
 Optional prüft `tests/release_packages.py --staging-space /pfad` auf einem
 separaten begrenzten Linux-Testdateisystem mit weniger als 2 MiB freiem Platz,
 dass ein Schreibfehler keinen `.ready`-Ordner veröffentlicht. Die synthetischen

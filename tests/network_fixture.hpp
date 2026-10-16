@@ -22,6 +22,7 @@ struct NetworkSettings {
   bool dns_failure = false;
   bool system_dns = false;
   bool app_release = false;
+  bool app_asset = false;
   std::optional<std::vector<std::vector<std::string>>> dns_answers;
 };
 

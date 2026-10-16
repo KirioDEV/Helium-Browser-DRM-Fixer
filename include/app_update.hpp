@@ -87,4 +87,35 @@ AppUpdateStatus parse_app_update(const HttpResponse &response,
                                  const std::string &installed_version);
 AppUpdateStatus check_app_update();
 Json app_update_json(const AppUpdateStatus &status);
+
+struct AppUpdateAsset {
+  std::string url;
+  std::uint64_t size = 0;
+};
+struct AppUpdateDownload {
+  std::string version;
+  AppUpdateAsset manifest, signature, package;
+};
+struct PreparedAppUpdate {
+  AppPackageManifest manifest;
+  fs::path directory;
+  Bytes signed_manifest, signature;
+};
+
+AppUpdateDownload parse_app_update_download(
+    const HttpResponse &response, const std::string &installed_version);
+// Separate from the Google/CDM URL policy. Exactly one redirect to GitHub's
+// release-assets host is supported, with the same public-DNS/TLS/peer checks.
+Bytes app_asset_request_with_transport(const AppUpdateAsset &asset,
+                                       const HttpTransport &transport);
+PreparedAppUpdate prepare_app_update_with_transport(
+    const AppUpdateDownload &download, const fs::path &parent,
+    const HttpTransport &transport);
+// Explicit out-of-band trust for release tooling/tests, never downloaded trust.
+PreparedAppUpdate prepare_app_update_with_trusted_key(
+    const AppUpdateDownload &download, const fs::path &parent,
+    const HttpTransport &transport, std::span<const unsigned char> trusted_key);
+// Build-time trust only. One shared 120-second network budget covers metadata
+// and all three assets. Does not replace or launch the installed application.
+PreparedAppUpdate prepare_app_update(const fs::path &parent);
 }  // namespace fixer
