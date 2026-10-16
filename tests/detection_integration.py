@@ -5,6 +5,7 @@ environment variables point only inside the temporary tree.
 """
 
 import os
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -47,6 +48,7 @@ def main():
                 raise RuntimeError(f"{name}: modified the fixture tree")
             passed += 1
             print(f"{name}: passed", flush=True)
+            return output
 
         execute("conflicting paths", ["--helium-app-path", root,
                 "--helium-path", root / "WidevineCdm"], 2)
@@ -145,6 +147,12 @@ def main():
         try:
             execute("unreadable executable rejected", ["--helium-app-path", app,
                     "--check"], 1, read_only=False)
+            output = execute("JSON read error is not a repair diagnosis",
+                             ["--helium-app-path", app, "--check", "--json"],
+                             1, read_only=False)
+            value = json.loads(output)
+            if value["state"] != "unavailable" or value["exit_code"] != 1:
+                raise RuntimeError("Read error was misclassified as a CDM defect")
         finally:
             kernel.CloseHandle(handle)
         if snapshot(app / "10.0.0.0") != before:

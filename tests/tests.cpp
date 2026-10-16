@@ -714,6 +714,8 @@ int main(int argc, char **argv) {
             "Conflicting modes");
     rejects([] { (void)parse_options({"--force-download", "--check"}); },
             "Writes in check mode");
+    rejects([] { (void)parse_options({"--json"}); },
+            "JSON requires inspection");
     rejects([] { (void)parse_options({"--helium-path"}); }, "Missing value");
     rejects([] { (void)parse_options({"--helium-app-path", ""}); },
             "Empty application path");
@@ -1024,6 +1026,23 @@ int main(int argc, char **argv) {
     check.target = target;
     check.check = true;
     expect(run(check) == 3 && snapshot(root) == before, "Check changed files");
+    {
+      const auto status = inspect_local(check);
+      expect(status.state == LocalState::missing && status.exit_code == 3 &&
+                 status.target == target && status.version.empty() &&
+                 snapshot(root) == before,
+             "Structured inspection of a missing CDM changed files");
+      cancelled.store(true);
+      bool cancelled_status = false;
+      try {
+        (void)inspect_local(check);
+      } catch (const Error &error) {
+        cancelled_status = error.code == Code::cancelled;
+      }
+      cancelled.store(false);
+      expect(cancelled_status && snapshot(root) == before,
+             "Status inspection swallowed cancellation");
+    }
     for (const auto &bad_manifest :
          {"{}", "[]", "{\"version\":1}", "{\"version\":\"9.9.9.9\"}"}) {
       auto bad = cdm;
@@ -1047,6 +1066,20 @@ int main(int argc, char **argv) {
     auto after = snapshot(root);
     expect(run(check) == 0 && snapshot(root) == after,
            "Installed check changed files");
+    {
+      const auto status = inspect_local(check);
+      expect(status.state == LocalState::locally_valid &&
+                 status.exit_code == 0 && status.version == "1.2.3.4" &&
+                 snapshot(root) == after,
+             "Structured valid status changed files");
+      Options conflicting = check;
+      conflicting.helium_app = root;
+      const auto unavailable = inspect_local(conflicting);
+      expect(unavailable.state == LocalState::unavailable &&
+                 unavailable.exit_code == 2 && unavailable.target.empty() &&
+                 snapshot(root) == after,
+             "Conflicting inspection target was not rejected");
+    }
     for (const auto &phase :
          {"prepared", "old_renamed", "old_moved", "new_renamed", "new_moved"}) {
       rejects(

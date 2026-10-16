@@ -115,6 +115,8 @@ Options parse_options(const std::vector<std::string> &args) {
       o.version = true;
     else if (flag == "--check")
       o.check = true;
+    else if (flag == "--json")
+      o.json = true;
     else if (flag == "--dry-run")
       o.dry_run = true;
     else if (flag == "--restore")
@@ -144,6 +146,7 @@ Options parse_options(const std::vector<std::string> &args) {
           "Choose one of --check, --dry-run or --restore", Code::invalid);
   require(o.source == "google" || o.source == "chrome" || o.source == "package",
           "Invalid source", Code::invalid);
+  require(!o.json || o.check, "--json requires --check", Code::invalid);
   require(
       o.helium_app.empty() || (o.target.empty() && !o.restore),
       "--helium-app-path cannot be combined with --helium-path or --restore; "
@@ -165,6 +168,8 @@ std::string help_text() {
          " (Windows 11 / Linux x86_64)\n"
          "Usage: helium_drm_fixer [options]\n"
          "  --check                 Inspect local CDM; no network or writes\n"
+         "  --json                  Machine-readable local status; requires "
+         "--check\n"
          "  --dry-run               Show planned actions; no network or "
          "writes\n"
          "  --restore               Recover an interrupted install or restore "
@@ -185,6 +190,20 @@ std::string help_text() {
          "Local Chrome files are trusted by your explicit source selection.\n";
 }
 
+fs::path resolve_target(const Options &o) {
+  require(o.helium_app.empty() || (o.target.empty() && !o.restore),
+          "Application path conflicts with exact target or restore",
+          Code::invalid);
+  const auto target = !o.helium_app.empty() ? resolve_helium_app(o.helium_app)
+                      : o.target.empty()
+                          ? detect_target()
+                          : fs::absolute(o.target).lexically_normal();
+  require(target.filename() == "WidevineCdm",
+          "Target must be the exact WidevineCdm directory", Code::invalid);
+  assert_safe_path(target);
+  return target;
+}
+
 int run(const Options &o) {
   if (o.help) {
     std::cout << help_text();
@@ -194,37 +213,39 @@ int run(const Options &o) {
     std::cout << FIXER_VERSION << '\n';
     return 0;
   }
-  require(o.helium_app.empty() || (o.target.empty() && !o.restore),
-          "Application path conflicts with exact target or restore",
-          Code::invalid);
-  auto target = !o.helium_app.empty() ? resolve_helium_app(o.helium_app)
-                : o.target.empty()    ? detect_target()
-                                   : fs::absolute(o.target).lexically_normal();
-  require(target.filename() == "WidevineCdm",
-          "Target must be the exact WidevineCdm directory", Code::invalid);
-  assert_safe_path(target);
-  if (o.verbose || o.dry_run) std::cout << "Target: " << utf8(target) << '\n';
+  require(!o.json || o.check, "--json requires --check", Code::invalid);
   if (o.check) {
-    if (has_transaction(target)) {
-      std::cout << "Pending recovery: run --restore before installing.\n";
-      return 5;
+    const auto status = inspect_local(o);
+    if (o.json) {
+      std::cout << local_status_json(status).dump() << '\n';
+      return status.exit_code;
     }
-    if (!fs::exists(target)) {
-      std::cout << "Widevine is missing.\n";
-      return 3;
+    if (o.verbose && !status.target.empty())
+      std::cout << "Target: " << utf8(status.target) << '\n';
+    switch (status.state) {
+      case LocalState::recovery_required:
+        std::cout << "Pending recovery: run --restore before installing.\n";
+        break;
+      case LocalState::missing:
+        std::cout << "Widevine is missing.\n";
+        break;
+      case LocalState::locally_valid:
+        std::cout << "Widevine " << status.version
+                  << ": manifest and x86_64 library are locally valid.\n"
+                     "Publisher integrity and streaming compatibility are not "
+                     "established by this check.\n";
+        break;
+      case LocalState::locally_invalid:
+        std::cout << "Widevine is locally invalid: " << status.detail << '\n';
+        break;
+      case LocalState::unavailable:
+        std::cout << "Local inspection failed: " << status.detail << '\n';
+        break;
     }
-    try {
-      auto cdm = read_cdm(installed_cdm_dir(target));
-      std::cout << "Widevine " << cdm.version
-                << ": manifest and x86_64 library are locally valid.\n"
-                   "Publisher integrity and streaming compatibility are not "
-                   "established by this check.\n";
-      return 0;
-    } catch (const Error &error) {
-      std::cout << "Widevine is locally invalid: " << error.what() << '\n';
-      return 4;
-    }
+    return status.exit_code;
   }
+  const auto target = resolve_target(o);
+  if (o.verbose || o.dry_run) std::cout << "Target: " << utf8(target) << '\n';
   if (o.dry_run) {
     std::cout << "Read-only plan. Source: " << o.source << ".\n";
     if (o.source == "chrome") {

@@ -93,10 +93,36 @@ def main():
         def local(directory, extra=(), destination=location):
             return [*destination, "--source", "chrome", "--chrome-path", directory, *extra]
 
+        def status(name, destination, state, code, version=None):
+            output = execute(name, [*destination, "--check", "--json", "--verbose"],
+                             code, read_only=True)
+            value = json.loads(output)
+            if (value["schema_version"] != 1 or value["state"] != state or
+                    value["exit_code"] != code or value["version"] != version or
+                    value["target"] != str(Path(destination[-1]).resolve()) or
+                    not value["detail"] or
+                    any(value[key] is not False for key in (
+                        "online_version_checked", "publisher_integrity_verified",
+                        "streaming_compatibility_verified"))):
+                raise RuntimeError(f"{name}: incorrect structured status: {value}")
+            return value
+
         execute("help", ["--help"], contains=("Usage:",), read_only=True)
         execute("version", ["--version"], read_only=True)
         execute("missing installation", [*location, "--check"], 3,
                 contains=("Widevine is missing",), read_only=True)
+        status("JSON missing installation", location, "missing", 3)
+        execute("JSON requires check", [*location, "--json"], 2, read_only=True)
+        execute("JSON cannot install", local(first, ["--json"]), 2, read_only=True)
+        execute("JSON cannot plan", [*location, "--dry-run", "--json"], 2,
+                read_only=True)
+        invalid_selection = execute("JSON invalid target selection", ["--helium-path",
+                profile / "wrong-root", "--check", "--json"], 2, read_only=True)
+        selection_status = json.loads(invalid_selection)
+        if (selection_status["state"] != "unavailable" or
+                selection_status["exit_code"] != 2 or
+                selection_status["target"] is not None):
+            raise RuntimeError("Invalid target selection produced a repair diagnosis")
         execute("offline Google plan", [*location, "--dry-run"],
                 contains=("Online version unknown",), read_only=True)
         execute("local source plan", local(first, ["--dry-run"]),
@@ -112,6 +138,7 @@ def main():
         first_installed = snapshot(target)
         execute("check installed source", [*location, "--check"],
                 contains=("Widevine 1.2.3.4", "not established"), read_only=True)
+        status("JSON valid installation", location, "locally_valid", 0, "1.2.3.4")
         execute("update", local(second), contains=("Installed Widevine 2.0.0.0",))
         execute("check updated source", [*location, "--check"],
                 contains=("Widevine 2.0.0.0",), read_only=True)
@@ -140,9 +167,39 @@ def main():
         invalid_profile = root / "invalid profile"
         invalid_profile.mkdir()
         invalid_target = source(invalid_profile / "WidevineCdm", "1.2.3.4")
-        (invalid_target / "manifest.json").write_text("invalid JSON", encoding="ascii")
+        invalid_component = invalid_target
+        if sys.platform != "win32":
+            invalid_component = invalid_target / "1.2.3.4"
+            invalid_component.mkdir()
+            for path in tuple(invalid_target.iterdir()):
+                if path.is_file():
+                    path.rename(invalid_component / path.name)
+            (invalid_target / "latest-component-updated-widevine-cdm").write_text(
+                json.dumps({"Path": str(invalid_component)}), encoding="utf-8")
+        (invalid_component / "manifest.json").write_text("invalid JSON", encoding="ascii")
         execute("locally invalid installation", ["--helium-path",
                 invalid_profile / "WidevineCdm", "--check"], 4, read_only=True)
+        status("JSON invalid installation", ["--helium-path", invalid_target],
+               "locally_invalid", 4)
+        (invalid_component / "manifest.json").write_text('{"version":"1.2.3.4"}',
+                                                       encoding="ascii")
+        library = next(invalid_component.glob("*widevinecdm*"))
+        library.write_bytes(b"invalid binary")
+        status("JSON invalid library", ["--helium-path", invalid_target],
+               "locally_invalid", 4)
+        library.unlink()
+        status("JSON unreadable component", ["--helium-path", invalid_target],
+               "unavailable", 1)
+
+        broken = root / "broken journal profile"
+        broken.mkdir()
+        broken_target = broken / "WidevineCdm"
+        execute("prepare managed journal", local(first, destination=[
+                "--helium-path", broken_target]))
+        (broken / ".helium-drm-fixer" / "journal.json").write_text("invalid JSON",
+                                                                   encoding="ascii")
+        status("JSON invalid journal blocks diagnosis", ["--helium-path", broken_target],
+               "unavailable", 4)
 
         empty_profile = root / "first install restore"
         empty_profile.mkdir()
@@ -160,6 +217,7 @@ def main():
                 77, program=helper)
         execute("check pending recovery", [*crash_location, "--check"], 5,
                 contains=("Pending recovery",), read_only=True)
+        status("JSON pending recovery", crash_location, "recovery_required", 5)
         execute("plan pending recovery", [*crash_location, "--dry-run"],
                 contains=("Blocked by pending transaction",), read_only=True)
         execute("pending recovery blocks install", local(second, destination=crash_location),

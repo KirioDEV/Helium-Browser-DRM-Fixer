@@ -66,6 +66,22 @@ Cache-Erzeugung und keine Protokolldateien. Eine unbekannte Online-Version wird
 nicht geraten. Ein lokal plausibles CDM beweist weder dessen Herausgeberintegrität
 noch funktionierendes Streaming.
 
+`--check --json` gibt den lokalen Status als einzelnes JSON-Objekt aus, auch mit
+`--verbose`. Die Zustände unterscheiden fehlendes, lokal ungültiges und lokal
+plausibles Widevine, offene Recovery sowie eine nicht mögliche Prüfung.
+Lesefehler und beschädigte Verwaltungsjournale sind keine automatische
+Reparaturempfehlung. Die Exitcodes bleiben erhalten; `--json` ist ausschließlich
+mit `--check` zulässig. Lesefehler verwenden den Betriebsfehler-Code 1 und werden
+nicht mehr pauschal als ungültiger CDM-Inhalt mit Code 4 ausgegeben.
+
+JSON-Schema 1 enthält `state` (`missing`, `locally_invalid`, `locally_valid`,
+`recovery_required` oder `unavailable`), `target`, `version`, `detail` und
+`exit_code`. Ein nicht auflösbares Ziel und eine nicht festgestellte Version sind
+`null`. `online_version_checked`, `publisher_integrity_verified` und
+`streaming_compatibility_verified` sind jeweils `false`. Optionsfehler und
+Abbruch nutzen den normalen Fehlerpfad. Der C++-Kern liefert dasselbe Ergebnis
+über `inspect_local(const Options&)` als `LocalStatus` ohne Konsolenausgabe.
+
 Für die tatsächliche Installation Helium vollständig schließen und das Programm
 ohne Prüfmodus starten. Der Standard ist `--source google`; bei Fehlern findet
 kein stiller Wechsel auf eine andere Vertrauensquelle statt.
@@ -226,7 +242,7 @@ Prüfungen; beim normalen lokalen Build werden fehlende Voraussetzungen gemeldet
 
 Die Fehlerfalltests prüfen außerdem Abbruch mit Rollback, manipulierte Backups
 und Journale, Hardlinks sowie unter Windows gesperrte DLLs. Ein zusätzlicher
-CTest-Lauf führt 26 Szenarien mit der tatsächlichen Programmdatei aus:
+CTest-Lauf führt 38 Szenarien mit der tatsächlichen Programmdatei aus:
 Installation, Update, Restore, Crash-Recovery, Exitcodes und Unicode-Pfade.
 Er verwendet ausschließlich synthetische PE-/ELF-Header in separaten temporären
 Profilen; die Dateien werden nicht als Bibliotheken geladen. Quell-, Ziel-,
@@ -236,7 +252,7 @@ prüfen verbleibende Inhalte und Änderungszeiten der schreibfreien und abgelehn
 Aufrufe. Sie erfassen keine zwischenzeitlichen Schreib-/Lösch-Systemaufrufe und
 belegen allein keine Netzwerkfreiheit.
 
-Eine weitere CTest-Gruppe prüft die Installationserkennung mit 33 Windows-
+Eine weitere CTest-Gruppe prüft die Installationserkennung mit 34 Windows-
 Szenarien: numerische Auswahl, Program-Files-/Benutzerpfad-Fallbacks,
 mehrdeutige Versionen, ungültige/gesperrte EXEs, Hardlinks, Junctions sowie
 Installieren, Update, Restore und erneute Auflösung nach einem Versionswechsel.

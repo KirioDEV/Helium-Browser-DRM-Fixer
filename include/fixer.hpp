@@ -120,11 +120,37 @@ struct Options {
   bool check = false, dry_run = false, verbose = false, force = false,
        restore = false;
   bool help = false, version = false;
+  bool json = false;
   std::string source = "google";
   fs::path target, helium_app, chrome, package;
 };
 
 Options parse_options(const std::vector<std::string> &arguments);
+
+// Resolve once per operation. Restore must use a stable, exact target.
+fs::path resolve_target(const Options &options);
+
+enum class LocalState {
+  missing,
+  locally_invalid,
+  locally_valid,
+  recovery_required,
+  unavailable
+};
+
+struct LocalStatus {
+  LocalState state = LocalState::unavailable;
+  fs::path target;
+  std::string version;
+  std::string detail;
+  int exit_code = static_cast<int>(Code::failure);
+};
+
+// Uses only target selection from Options. Does not print, download or write.
+// Cancellation propagates as Code::cancelled rather than a repair diagnosis.
+LocalStatus inspect_local(const Options &options);
+
+Json local_status_json(const LocalStatus &status);
 
 std::string help_text();
 
