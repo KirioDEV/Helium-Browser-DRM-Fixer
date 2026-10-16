@@ -10,6 +10,7 @@
 // Windows API headers require this include order.
 // clang-format off
 #include <windows.h>
+#include <aclapi.h>
 #include <shellapi.h>
 // clang-format on
 #else
@@ -159,6 +160,51 @@ void directory_tests(const fs::path &root) {
   fs::remove(displaced / "link");
 #endif
 }
+
+#ifdef _WIN32
+void private_owner_tests(const fs::path &root) {
+  const auto path = root / "explicit-user-owner";
+  create_private_dir(path);
+  struct Token {
+    HANDLE value = nullptr;
+    ~Token() {
+      if (value) CloseHandle(value);
+    }
+  } token;
+  require(OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token.value) != 0,
+          "Cannot open test process token");
+  DWORD size = 0;
+  GetTokenInformation(token.value, TokenUser, nullptr, 0, &size);
+  Bytes user(size);
+  require(GetTokenInformation(token.value, TokenUser, user.data(), size,
+                              &size) != 0,
+          "Cannot read test user SID");
+  PSID owner = nullptr;
+  PACL dacl = nullptr;
+  struct Descriptor {
+    PSECURITY_DESCRIPTOR value = nullptr;
+    ~Descriptor() {
+      if (value) LocalFree(value);
+    }
+  } descriptor;
+  require(GetNamedSecurityInfoW(
+              const_cast<wchar_t *>(path.c_str()), SE_FILE_OBJECT,
+              OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION, &owner,
+              nullptr, &dacl, nullptr, &descriptor.value) == ERROR_SUCCESS,
+          "Cannot inspect test directory security");
+  expect(
+      owner && EqualSid(owner,
+                        reinterpret_cast<TOKEN_USER *>(user.data())->User.Sid),
+      "New directory owner must be TokenUser, not the token default owner");
+  SECURITY_DESCRIPTOR_CONTROL control = 0;
+  DWORD revision = 0;
+  expect(GetSecurityDescriptorControl(descriptor.value, &control, &revision) &&
+             (control & SE_DACL_PROTECTED) && dacl,
+         "Private directory must retain a protected DACL");
+  create_private_dir(path);
+  expect(fs::is_empty(path), "Reopening private directory changed contents");
+}
+#endif
 
 #ifndef _WIN32
 // This deliberately consumes real blocks on a dedicated, bounded tmpfs. Never
@@ -685,6 +731,9 @@ int main(int argc, char **argv) {
                                    ("helium-fixer-test-" + random_id()));
     create_private_dir(root);
     directory_tests(root);
+#ifdef _WIN32
+    private_owner_tests(root);
+#endif
 #ifndef _WIN32
     transaction_binding_tests(root);
 #endif
@@ -864,7 +913,8 @@ int main(int argc, char **argv) {
         cancellation_code = error.code == Code::cancelled;
       }
       cancelled.store(false);
-      expect(cancellation_code, "Cancellation exit code");
+      expect(cancellation_code,
+             std::string("Cancellation exit code at ") + phase);
       expect(read_cdm(installed_cdm_dir(target)).version == "1.2.3.4",
              std::string("Cancellation rollback: ") + phase);
       expect(!has_transaction(target), "Pending after cancellation rollback");

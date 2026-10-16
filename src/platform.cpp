@@ -454,8 +454,11 @@ void create_private_dir(const fs::path &path) {
   wchar_t *sid = nullptr;
   require(ConvertSidToStringSidW(user->User.Sid, &sid) != 0,
           "Cannot format user SID", Code::failure);
+  // An elevated token can default to the Administrators group as owner. Our
+  // managed-directory contract requires the actual user SID on every access.
+  const std::wstring user_sid(sid);
   const std::wstring sddl =
-      L"D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;" + std::wstring(sid) + L")";
+      L"O:" + user_sid + L"D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;" + user_sid + L")";
   LocalFree(sid);
   PSECURITY_DESCRIPTOR descriptor = nullptr;
   require(ConvertStringSecurityDescriptorToSecurityDescriptorW(
@@ -465,6 +468,7 @@ void create_private_dir(const fs::path &path) {
   const bool ok = CreateDirectoryW(path.c_str(), &attrs) != 0;
   LocalFree(descriptor);
   require(ok, "Cannot create private directory: " + utf8(path), Code::failure);
+  check_private_acl(path);
 #else
   require(mkdirat(parent.back()->value, path.filename().c_str(), 0700) == 0,
           "Cannot create private directory", Code::failure);
