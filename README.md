@@ -238,8 +238,9 @@ ungültige Metadaten und Abbruch bleiben Fehler und werden nicht als „aktuell�
 ausgegeben. Fehler vor einem Prüfergebnis nutzen den normalen Fehlerpfad.
 
 `--update-app` und die eigentliche Selbstinstallation sind **noch nicht
-implementiert**. Lokale Paketerzeugung und Signaturprüfung sind vorbereitet;
-Download, sicheres Entpacken und Austausch mit Rückfallmöglichkeit folgen noch.
+implementiert**. Lokale Paketerzeugung, Signaturprüfung und geprüftes Entpacken
+im Arbeitsspeicher sind vorbereitet; Download, Schreiben in ein geschütztes
+Staging und Austausch mit Rückfallmöglichkeit folgen noch.
 Die spätere GUI soll beim Start im Hintergrund prüfen,
 unten rechts ihre App-Version und bei einem Update einen `Aktualisieren`-Knopf
 anzeigen. Installation erfolgt nach einem ausdrücklichen Befehl oder Klick.
@@ -290,8 +291,15 @@ aus einem später eingerichteten privaten Schlüssel abgeleitet werden.
 
 Die native Schnittstelle prüft Signatur, erwartete Version, Plattform und
 Manifeststruktur; `verify_app_package_digest` prüft anschließend Größe und Hash
-der ZIP-Bytes. Das ist noch keine Prüfung entpackter Dateien und keine Freigabe
-zur Installation. Der Release-Check lädt diese Signaturdateien noch nicht nach;
+der ZIP-Bytes. `unpack_app_package` verlangt ein zuvor signaturgeprüftes Manifest
+und entpackt ausschließlich im Arbeitsspeicher. Die Dateiliste muss exakt passen;
+jede Datei wird auf Größe, SHA-256, regulären Dateityp und die vorgesehenen
+Berechtigungen geprüft. Links, zusätzliche/fehlende Dateien, doppelte oder
+abweichende Pfade, CRC-Fehler und falsche Binärformate werden abgelehnt.
+Dateien sind auf 64 MiB, das Paket und die Summe auf je 128 MiB begrenzt.
+Erst nach vollständiger Prüfung werden die Dateiinhalte zurückgegeben.
+Das ist keine Freigabe zur Installation und schreibt keine Dateien.
+Der Release-Check lädt diese Signaturdateien noch nicht nach;
 seine JSON-Felder `package_verified` und `self_install_supported` bleiben `false`.
 Die CI erhält keinen privaten Schlüssel und erzeugt weiterhin nur Kandidaten.
 
@@ -388,10 +396,12 @@ Program Files einschließlich `ProgramW6432`, Benutzer- und Cachepfade sind dabe
 auf temporäre Fixtures gesetzt. Unter Linux prüfen fünf Szenarien die
 Optionskonflikte und die Beibehaltung der profilbezogenen Zielauswahl.
 
-Eine siebte CTest-Gruppe prüft 35 Releasefälle mit kurzlebigen Testschlüsseln:
+Eine siebte CTest-Gruppe prüft 53 Releasefälle mit kurzlebigen Testschlüsseln:
 RSA-3072/4096, falsche/zu schwache/EC-Schlüssel, Signatur-Kontext, manipulierte
 Manifeste und ZIPs, Plattform-/Versionsbindung, Inventar-/Pfadfehler, unveränderte
-Ausgaben bei abgelehnten Aufrufen und verschlüsselte Schlüssel. Die synthetischen
+Ausgaben bei abgelehnten Aufrufen und verschlüsselte Schlüssel. Erneut signierte
+ZIPs prüfen außerdem Links, Berechtigungen, fehlende/zusätzliche Dateien,
+CRC-/Dateihashfehler, Binärformate sowie gespeicherte und leere Dateien. Die synthetischen
 Releaseprogramme werden nicht ausgeführt. Diese Testschlüssel werden weder im
 normalen Programm verankert noch als Release-Vertrauensanker mitgeliefert.
 

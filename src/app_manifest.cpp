@@ -1,3 +1,6 @@
+#include <miniz.h>
+
+#include <map>
 #include <set>
 
 #include "app_update.hpp"
@@ -204,5 +207,81 @@ void verify_app_package_digest(const AppPackageManifest &manifest,
   require(sha256(package) == manifest.package_sha256,
           "App package SHA-256 mismatch");
   check_cancelled();
+}
+
+std::vector<AppPackageFile> unpack_app_package(
+    const AppPackageManifest &manifest, View package) {
+  verify_app_package_digest(manifest, package);
+  require(manifest.files.is_array() && !manifest.files.empty() &&
+              manifest.files.size() <= 256,
+          "Invalid app inventory");
+  mz_zip_archive zip{};
+  require(mz_zip_reader_init_mem(&zip, package.data(), package.size(), 0) != 0,
+          "Cannot read app ZIP");
+  struct End {
+    mz_zip_archive *zip;
+    ~End() { mz_zip_reader_end(zip); }
+  } end{&zip};
+  require(mz_zip_reader_get_num_files(&zip) == manifest.files.size(),
+          "App ZIP inventory count mismatch");
+  std::map<std::string, const Json *> expected;
+  for (const auto &file : manifest.files)
+    require(expected.emplace(file.at("path").get<std::string>(), &file).second,
+            "Duplicate app inventory path");
+  std::set<std::string> seen;
+  std::vector<AppPackageFile> result;
+  std::uint64_t total = 0;
+  for (mz_uint i = 0; i < mz_zip_reader_get_num_files(&zip); ++i) {
+    check_cancelled();
+    mz_zip_archive_file_stat stat{};
+    require(mz_zip_reader_file_stat(&zip, i, &stat) != 0,
+            "Cannot inspect app ZIP entry");
+    const auto length = mz_zip_reader_get_filename(&zip, i, nullptr, 0);
+    require(length > 1 && length <= 241, "Invalid app ZIP filename length");
+    std::string path(length, '\0');
+    require(mz_zip_reader_get_filename(&zip, i, path.data(), length) == length,
+            "Cannot read app ZIP filename");
+    path.resize(length - 1);
+    require(path.find('\0') == std::string::npos &&
+                validate_entry(path) == path && seen.insert(lower(path)).second,
+            "Unsafe/duplicate app ZIP path");
+    const auto found = expected.find(path);
+    require(found != expected.end(), "Unlisted app ZIP entry");
+    const auto &file = *found->second;
+    const bool executable = file.at("executable").get<bool>();
+    const auto size = bounded_size(file.at("size"), file_limit);
+    const auto mode = stat.m_external_attr >> 16;
+    require(!stat.m_is_directory && !stat.m_is_encrypted &&
+                stat.m_is_supported &&
+                (stat.m_method == 0 || stat.m_method == 8),
+            "Unsupported app ZIP entry");
+    require(mode == (executable ? 0100755U : 0100644U) &&
+                (stat.m_external_attr & 0x10) == 0,
+            "Invalid app ZIP file type/permissions");
+    require(stat.m_uncomp_size == size && size <= expanded_limit - total,
+            "App ZIP expanded size mismatch/limit");
+    total += size;
+    Bytes bytes(static_cast<std::size_t>(size));
+    require(mz_zip_reader_extract_to_mem(&zip, i, bytes.data(), bytes.size(),
+                                         0) != 0,
+            "App ZIP extraction/CRC check failed");
+    require(sha256(bytes) == file.at("sha256").get<std::string>(),
+            "App ZIP file SHA-256 mismatch");
+    if (path.starts_with("bin/")) {
+      validate_binary(bytes, !executable);
+#ifdef _WIN32
+      if (executable) {
+        const auto offset = static_cast<std::size_t>(bytes[0x3c]) |
+                            (static_cast<std::size_t>(bytes[0x3d]) << 8) |
+                            (static_cast<std::size_t>(bytes[0x3e]) << 16) |
+                            (static_cast<std::size_t>(bytes[0x3f]) << 24);
+        require((bytes[offset + 23] & 0x20) == 0, "App executable is a DLL");
+      }
+#endif
+    }
+    result.push_back({std::move(path), std::move(bytes), executable});
+  }
+  check_cancelled();
+  return result;
 }
 }  // namespace fixer

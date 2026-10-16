@@ -891,10 +891,11 @@ int main(int argc, char **argv) {
                                manifest, signature,
                                read_file(from_utf8(argv[4]), 1024), version)
                          : verify_app_manifest(manifest, signature, version);
-      verify_app_package_digest(
+      const auto files = unpack_app_package(
           parsed, read_file(from_utf8(argv[explicit_trust ? 5 : 4]),
                             128 * 1024 * 1024));
-      std::cout << "Signed manifest and package digest verified\n";
+      std::cout << "Signed manifest and " << files.size()
+                << " unpacked app files verified\n";
       return 0;
     }
 #ifndef _WIN32

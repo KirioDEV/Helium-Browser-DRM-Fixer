@@ -2,12 +2,14 @@
 
 import argparse
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import warnings
 import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
@@ -84,7 +86,7 @@ def main():
             passed += 1
             print(f"{name}: passed", flush=True)
 
-        verify("RSA-3072 manifest and ZIP digest")
+        verify("RSA-3072 manifest and unpacked ZIP inventory")
         verify("untrusted signing key", trust=other_public, accepted=False)
         verify("unexpected app version", expected="1.2.4", accepted=False)
         package.write_bytes(original_package[:-1] + bytes([original_package[-1] ^ 1]))
@@ -145,6 +147,91 @@ def main():
         signature.write_bytes(command([args.openssl, "dgst", "-sha256", "-sign", ec.name], DOMAIN + original_manifest))
         verify("EC key cannot substitute for RSA", trust=ec_public, accepted=False)
         rejected("EC signer rejected", lambda: sign_manifest(original_manifest, ec, args.openssl))
+        signature.write_bytes(original_signature)
+        # Re-sign the compressed package hash so these cases exercise ZIP and
+        # inventory checks after successful signature/digest verification.
+        with zipfile.ZipFile(io.BytesIO(original_package)) as archive:
+            entries = [(entry, archive.read(entry)) for entry in archive.infolist()]
+        for change in range(16):
+            value = json.loads(original_manifest)
+            stream = io.BytesIO()
+            with warnings.catch_warnings(), zipfile.ZipFile(stream, "w") as archive:
+                warnings.simplefilter("ignore", UserWarning)
+                for index, (original_entry, original_data) in enumerate(entries):
+                    entry = zipfile.ZipInfo(original_entry.filename)
+                    entry.create_system = 3
+                    entry.external_attr = original_entry.external_attr
+                    entry.compress_type = zipfile.ZIP_DEFLATED
+                    data = original_data
+                    if index == 0:
+                        if change == 0: entry.filename = "../escape"
+                        if change == 1: entry.filename = entry.filename.upper()
+                        if change == 2: entry.external_attr = (0o120755 << 16)
+                        if change == 3: entry.external_attr = (0o104755 << 16)
+                        if change == 4: entry.external_attr = (0o100644 << 16)
+                        if change == 5: data += b"changed"
+                        if change == 6: data = bytes([data[0] ^ 1]) + data[1:]
+                        if change == 7: continue
+                        if change == 8: entry.filename = "bin/unknown.exe"
+                        if change == 9: entry.external_attr |= 0x10
+                        if change == 10: entry.external_attr = 0
+                        if change == 11: entry.filename += "/"
+                        if change == 12:
+                            data = b"invalid binary".ljust(len(data), b"\0")
+                            value["files"][0]["sha256"] = hashlib.sha256(data).hexdigest()
+                        if change == 13:
+                            data = bytearray(data)
+                            if windows: data[68:70] = b"\x4c\x01"
+                            else: data[18:20] = b"\x03\0"
+                            value["files"][0]["sha256"] = hashlib.sha256(data).hexdigest()
+                        if change == 14 and windows:
+                            data = bytearray(data)
+                            data[87] |= 0x20
+                            value["files"][0]["sha256"] = hashlib.sha256(data).hexdigest()
+                    archive.writestr(entry, data)
+                    if index == 0 and change == 15:
+                        archive.writestr(entry, data)
+                if change == 14 and not windows:
+                    archive.writestr("unlisted.txt", b"unexpected")
+            changed_package = stream.getvalue()
+            value["package"]["size"] = len(changed_package)
+            value["package"]["sha256"] = hashlib.sha256(changed_package).hexdigest()
+            changed_manifest = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+            package.write_bytes(changed_package)
+            manifest.write_bytes(changed_manifest)
+            signature.write_bytes(sign_manifest(changed_manifest, key, args.openssl))
+            verify(f"signed unsafe ZIP {change}", accepted=False)
+        # Stored entries and empty documentation are supported, without making
+        # executable files optional or bypassing per-file hashes.
+        value = json.loads(original_manifest)
+        stream = io.BytesIO()
+        with zipfile.ZipFile(stream, "w") as archive:
+            for original_entry, original_data in entries:
+                entry = zipfile.ZipInfo(original_entry.filename)
+                entry.create_system = 3
+                entry.external_attr = original_entry.external_attr
+                data = original_data if entry.filename.startswith("bin/") else b""
+                archive.writestr(entry, data)
+                for file in value["files"]:
+                    if file["path"] == entry.filename:
+                        file["size"] = len(data)
+                        file["sha256"] = hashlib.sha256(data).hexdigest()
+        stored = stream.getvalue()
+        for broken_crc in (False, True):
+            data = bytearray(stored)
+            if broken_crc:
+                central = data.index(b"PK\x01\x02")
+                data[central + 16] ^= 1
+            value["package"]["size"] = len(data)
+            value["package"]["sha256"] = hashlib.sha256(data).hexdigest()
+            changed_manifest = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+            package.write_bytes(data)
+            manifest.write_bytes(changed_manifest)
+            signature.write_bytes(sign_manifest(changed_manifest, key, args.openssl))
+            verify("signed ZIP CRC mismatch" if broken_crc else "stored ZIP and empty documentation",
+                   accepted=not broken_crc)
+        package.write_bytes(original_package)
+        manifest.write_bytes(original_manifest)
         signature.write_bytes(original_signature)
         state = command([str(helper), "--app-update-trust"]).strip()
         if state == b"disabled":

@@ -58,6 +58,17 @@ bool app_update_key_configured();
 void verify_app_package_digest(const AppPackageManifest &manifest,
                                std::span<const unsigned char> package);
 
+struct AppPackageFile {
+  std::string path;
+  Bytes bytes;
+  bool executable = false;
+};
+
+// Requires a signature-verified manifest. Returns only after every ZIP entry
+// matches its signed inventory. Memory only; does not authorize installation.
+std::vector<AppPackageFile> unpack_app_package(
+    const AppPackageManifest &manifest, std::span<const unsigned char> package);
+
 // Metadata only. No redirects, package download, cache or filesystem writes.
 HttpResponse app_release_request_with_transport(const HttpTransport &transport);
 HttpResponse app_release_request();
