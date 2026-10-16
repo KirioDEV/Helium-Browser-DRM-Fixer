@@ -17,11 +17,23 @@ In CLion das Ziel `helium_drm_fixer` auswählen und bauen. Zum ersten Start
 `--help` oder `--check` als Programmargument setzen: ein Start ohne Argumente
 beginnt die Installation, wenn Helium erkannt und geschlossen ist.
 
-Mit MinGW liegen die benötigten drei Compiler-Laufzeit-DLLs neben der EXE.
-Diese Dateien beim Weitergeben zusammenlassen. Windows-HTTP, TLS und
-Kryptografie verwenden WinHTTP und CNG aus dem Betriebssystem.
-MSVC wird ebenfalls in der CI-Konfiguration berücksichtigt; ein lokaler
-MSVC-Lauf ist in dieser Umgebung noch nicht erfolgt.
+Die fertige Windows-Ausgabe wird mit MSVC und statisch eingebundener C++-Laufzeit
+gebaut: **eine startbare EXE ohne zusätzliche mitzuliefernde DLLs**. Projekt-
+und Bibliothekslizenzen sind als Ressourcen in der EXE enthalten. Windows-HTTP,
+TLS und Kryptografie verwenden WinHTTP und CNG aus dem Betriebssystem.
+Die CI bietet dafür das eigene Artefakt `windows-x64-standalone-exe` an.
+GitHub-Actions-Artefakte werden als ZIP heruntergeladen; darin liegt nur die EXE.
+Eine spätere Veröffentlichung kann diese EXE direkt als Release-Download anbieten.
+
+CLions mitgelieferter MinGW-Entwicklungsbuild benötigt weiterhin die drei
+Compiler-Laufzeit-DLLs neben seiner EXE. Diese Toolchain lässt sich hier nicht
+sauber mit allen statischen Laufzeitbibliotheken verbinden; für die einzelne
+auszuliefernde EXE den MSVC-Release-Build verwenden. Ein lokaler MSVC-Lauf ist
+in dieser Umgebung noch nicht erfolgt. Die CI prüft dessen DLL-Importe und
+startet die EXE allein aus einem temporären Ordner mit bereinigtem Suchpfad.
+
+Bei der späteren GUI muss die Auswahl und Einbindung der GUI-Bibliothek dieses
+Ziel weiterhin berücksichtigen. Die aktuelle EXE ist noch das Konsolenprogramm.
 
 ## Bauen unter Linux
 

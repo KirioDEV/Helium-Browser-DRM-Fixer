@@ -9,6 +9,11 @@ endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+if(WIN32)
+    enable_language(RC)
+    # Both the application and its dependencies must live inside the EXE.
+    set(BUILD_SHARED_LIBS OFF)
+endif()
 if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
@@ -76,6 +81,12 @@ if(FIXER_SANITIZERS AND NOT WIN32)
 endif()
 add_executable(helium_drm_fixer main.cpp)
 target_link_libraries(helium_drm_fixer PRIVATE fixer_core)
+if(WIN32)
+    configure_file(cmake/windows_licenses.rc.in generated/windows_licenses.rc @ONLY)
+    target_sources(helium_drm_fixer PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated/windows_licenses.rc")
+    set_source_files_properties("${CMAKE_CURRENT_BINARY_DIR}/generated/windows_licenses.rc"
+        PROPERTIES OBJECT_DEPENDS "${CMAKE_SOURCE_DIR}/LICENSE;${json_SOURCE_DIR}/LICENSE.MIT;${miniz_SOURCE_DIR}/LICENSE")
+endif()
 include(CTest)
 option(FIXER_REQUIRE_NETWORK_TESTS "Require Python/OpenSSL and native HTTPS test target" OFF)
 if(BUILD_TESTING)
@@ -85,6 +96,18 @@ if(BUILD_TESTING)
     add_test(NAME cli_help COMMAND helium_drm_fixer --help)
     find_package(Python3 COMPONENTS Interpreter)
     if(Python3_Interpreter_FOUND)
+        if(WIN32)
+            add_test(NAME windows_embedded_licenses COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_SOURCE_DIR}/tests/windows_portable.py"
+                "$<TARGET_FILE:helium_drm_fixer>" --resources-only)
+            set_tests_properties(windows_embedded_licenses PROPERTIES TIMEOUT 30)
+        endif()
+        if(MSVC)
+            add_test(NAME windows_portable_executable COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_SOURCE_DIR}/tests/windows_portable.py"
+                "$<TARGET_FILE:helium_drm_fixer>")
+            set_tests_properties(windows_portable_executable PROPERTIES TIMEOUT 60)
+        endif()
         add_test(NAME cli_workflows COMMAND "${Python3_EXECUTABLE}"
             "${CMAKE_SOURCE_DIR}/tests/cli_integration.py"
             "$<TARGET_FILE:helium_drm_fixer>" "$<TARGET_FILE:fixer_tests>")
@@ -126,7 +149,8 @@ if(FIXER_REQUIRE_NETWORK_TESTS AND NOT TARGET fixer_network_tests)
     message(FATAL_ERROR "Native HTTPS tests require BUILD_TESTING=ON, Python3 and the OpenSSL executable")
 endif()
 if(MINGW)
-    # CLion's bundled MinGW runtime is shipped alongside the executable.
+    # The bundled CLion MinGW toolchain needs these development DLLs.
+    # Distributable standalone Windows releases use MSVC's static runtime.
     get_filename_component(MINGW_BIN "${CMAKE_CXX_COMPILER}" DIRECTORY)
     foreach(runtime libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll)
         foreach(target helium_drm_fixer fixer_tests fixer_network_tests)

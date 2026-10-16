@@ -1,0 +1,4 @@
+// License notices travel with the standalone executable as RCDATA resources.
+101 RCDATA "@CMAKE_SOURCE_DIR@/LICENSE"
+102 RCDATA "@json_SOURCE_DIR@/LICENSE.MIT"
+103 RCDATA "@miniz_SOURCE_DIR@/LICENSE"
