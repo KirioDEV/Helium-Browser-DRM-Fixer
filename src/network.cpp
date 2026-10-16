@@ -2,10 +2,12 @@
 #include <charconv>
 #include <chrono>
 #include <condition_variable>
+#include <exception>
 #include <iostream>
 #include <mutex>
 #include <optional>
 #include <set>
+#include <thread>
 
 #include "fixer.hpp"
 #ifdef FIXER_NETWORK_TESTING
@@ -207,31 +209,144 @@ IpAddress resolve_public(const std::string &host) {
   return select_public(addresses);
 }
 
+class Resolver {
+  struct Task {
+    std::function<IpAddress()> resolve;
+    std::optional<IpAddress> address;
+    std::exception_ptr error;
+    std::condition_variable changed;
+    bool done = false;
+  };
+  struct State {
+    std::mutex mutex;
+    std::condition_variable changed;
+    std::shared_ptr<Task> task;
+    bool stopping = false;
+  };
+  std::shared_ptr<State> state_ = std::make_shared<State>();
+  std::thread worker_;
+
+ public:
+  Resolver()
+      : worker_([state = state_] {
+          for (;;) {
+            std::shared_ptr<Task> task;
+            {
+              std::unique_lock lock(state->mutex);
+              state->changed.wait(
+                  lock, [&] { return state->stopping || state->task; });
+              if (state->stopping) return;
+              task = state->task;
+            }
+            std::optional<IpAddress> address;
+            std::exception_ptr error;
+            try {
+              address = task->resolve();
+            } catch (...) {
+              error = std::current_exception();
+            }
+            {
+              std::lock_guard lock(state->mutex);
+              task->address = address;
+              task->error = error;
+              task->done = true;
+              state->task.reset();
+            }
+            task->changed.notify_all();
+          }
+        }) {}
+
+  ~Resolver() {
+    bool pending;
+    {
+      std::lock_guard lock(state_->mutex);
+      state_->stopping = true;
+      pending = static_cast<bool>(state_->task);
+    }
+    state_->changed.notify_all();
+    // A system resolver cannot be forcibly interrupted portably. Never join a
+    // blocked lookup on process exit. The worker owns its state and each task
+    // owns all inputs; neither references this object or a returned request.
+    // An idle worker must finish before the runtime tears down its resources.
+    if (pending)
+      worker_.detach();
+    else
+      worker_.join();
+  }
+  Resolver(const Resolver &) = delete;
+  Resolver &operator=(const Resolver &) = delete;
+
+  IpAddress lookup(std::function<IpAddress()> resolve,
+                   const RequestContext &context) {
+    (void)remaining_ms(context);
+    long timeout = 10000;
+#ifdef FIXER_NETWORK_TESTING
+    if (context.fixture) timeout = context.fixture->dns_ms;
+#endif
+    const auto deadline =
+        std::min(context.deadline, std::chrono::steady_clock::now() +
+                                       std::chrono::milliseconds(timeout));
+    const auto task = std::make_shared<Task>();
+    task->resolve = std::move(resolve);
+    std::unique_lock lock(state_->mutex);
+    require(!state_->task, "Previous DNS lookup is still pending",
+            Code::failure);
+    state_->task = task;
+    state_->changed.notify_one();
+    for (;;) {
+      lock.unlock();
+      (void)remaining_ms(context);
+      require(std::chrono::steady_clock::now() < deadline, "DNS lookup timeout",
+              Code::failure);
+      lock.lock();
+      if (task->done) break;
+      task->changed.wait_until(
+          lock,
+          std::min(deadline, std::chrono::steady_clock::now() +
+                                 std::chrono::milliseconds(20)),
+          [&] { return task->done; });
+    }
+    if (task->error) std::rethrow_exception(task->error);
+    require(task->address.has_value(), "DNS result missing", Code::failure);
+    return *task->address;
+  }
+};
+
 IpAddress connection_address(const Url &url, const RequestContext &context) {
   (void)remaining_ms(context);
+  std::function<IpAddress()> lookup = [host = url.host] {
+    return resolve_public(host);
+  };
 #ifdef FIXER_NETWORK_TESTING
   if (context.fixture) {
     const auto &settings = *context.fixture;
-    require(!settings.dns_failure, "Cannot resolve trusted host",
-            Code::failure);
+    std::optional<std::vector<std::string>> answers;
     if (settings.dns_answers) {
       require(context.dns_query < settings.dns_answers->size(),
               "Fixture DNS answer sequence exhausted", Code::failure);
-      const auto &answers = settings.dns_answers->at(context.dns_query++);
-      require(answers.size() <= 64, "Too many resolved DNS addresses");
-      std::vector<IpAddress> addresses;
-      for (const auto &answer : answers)
-        addresses.push_back(parse_address(answer));
-      (void)select_public(addresses);
+      answers = settings.dns_answers->at(context.dns_query++);
     }
-    // Only the separately compiled test transport maps a validated answer to
-    // its local server. Production always connects to the actual selected IP.
-    return parse_address("127.0.0.1");
+    // Copy every fixture input: the worker may finish after this request and
+    // its NetworkSettings have been destroyed.
+    lookup = [answers = std::move(answers), failure = settings.dns_failure,
+              delay = settings.dns_delay_ms] {
+      if (delay) std::this_thread::sleep_for(std::chrono::milliseconds(delay));
+      require(!failure, "Cannot resolve trusted host", Code::failure);
+      if (answers) {
+        require(answers->size() <= 64, "Too many resolved DNS addresses");
+        std::vector<IpAddress> addresses;
+        for (const auto &answer : *answers)
+          addresses.push_back(parse_address(answer));
+        (void)select_public(addresses);
+      }
+      // Only the separate test executable maps validated fixture answers to
+      // loopback. Production always connects to the actual selected address.
+      return parse_address("127.0.0.1");
+    };
   }
 #endif
-  const auto address = resolve_public(url.host);
-  (void)remaining_ms(context);
-  return address;
+  static Resolver resolver;
+  return resolver.lookup(std::move(lookup), context);
 }
 
 using Response = HttpResponse;
@@ -720,7 +835,9 @@ Bytes testing::network_request(const NetworkSettings &settings,
                                std::size_t limit, bool update) {
   require(settings.port && settings.total_ms > 0 &&
               settings.total_ms <= 60000 && settings.connect_ms > 0 &&
-              settings.idle_ms > 0 && settings.low_speed_seconds > 0,
+              settings.idle_ms > 0 && settings.low_speed_seconds > 0 &&
+              settings.dns_ms > 0 && settings.dns_ms <= 60000 &&
+              settings.dns_delay_ms >= 0 && settings.dns_delay_ms <= 5000,
           "Invalid network fixture settings");
   const RequestContext context{std::chrono::steady_clock::now() +
                                    std::chrono::milliseconds(settings.total_ms),

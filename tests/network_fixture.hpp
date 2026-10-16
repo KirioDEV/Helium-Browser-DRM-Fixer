@@ -15,6 +15,8 @@ struct NetworkSettings {
   long connect_ms = 1500;
   long idle_ms = 1500;
   long low_speed_seconds = 1;
+  long dns_ms = 1500;
+  long dns_delay_ms = 0;
   std::string ca_file;
   std::string peer_sha256;
   bool dns_failure = false;

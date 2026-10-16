@@ -46,6 +46,8 @@ int main(int argc, char **argv) {
     settings.connect_ms = config.value("connect_ms", 1500L);
     settings.idle_ms = config.value("idle_ms", 1500L);
     settings.low_speed_seconds = config.value("low_speed_seconds", 1L);
+    settings.dns_ms = config.value("dns_ms", 1500L);
+    settings.dns_delay_ms = config.value("dns_delay_ms", 0L);
     settings.dns_failure = config.value("dns_failure", false);
     if (config.contains("dns_answers"))
       settings.dns_answers =
@@ -65,9 +67,59 @@ int main(int argc, char **argv) {
         }
       });
     }
-    const auto response = testing::network_request(
-        settings, config.at("url").get<std::string>(), config.value("body", ""),
-        config.value("limit", 1024U), config.value("update", false));
+    auto request = [&](const testing::NetworkSettings &options) {
+      return testing::network_request(
+          options, config.at("url").get<std::string>(),
+          config.value("body", ""), config.value("limit", 1024U),
+          config.value("update", false));
+    };
+    const bool lifecycle = config.value("dns_lifecycle", false);
+    if (lifecycle) {
+      {
+        auto delayed = settings;
+        delayed.dns_ms = 100;
+        delayed.dns_delay_ms = 800;
+        delayed.dns_answers =
+            std::vector<std::vector<std::string>>{{"127.0.0.1"}};
+        bool timed_out = false;
+        try {
+          (void)request(delayed);
+        } catch (const Error &error) {
+          timed_out = error.code == Code::failure &&
+                      std::string(error.what()) == "DNS lookup timeout";
+        }
+        require(timed_out, "Fixture DNS worker did not time out");
+      }  // The abandoned worker must not reference these destroyed settings.
+      bool rejected_pending = false;
+      try {
+        (void)request(settings);
+      } catch (const Error &error) {
+        rejected_pending =
+            error.code == Code::failure &&
+            std::string(error.what()) == "Previous DNS lookup is still pending";
+      }
+      require(rejected_pending,
+              "Fixture resolver queued a second blocked lookup");
+    }
+    // Wait for the abandoned worker to finish without assuming an exact thread
+    // scheduling delay. Its late, invalid result must not poison a fresh
+    // lookup.
+    const auto retry_until =
+        std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    Bytes response;
+    for (;;) {
+      try {
+        response = request(settings);
+        break;
+      } catch (const Error &error) {
+        if (!lifecycle ||
+            std::string(error.what()) !=
+                "Previous DNS lookup is still pending" ||
+            std::chrono::steady_clock::now() >= retry_until)
+          throw;
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      }
+    }
     std::cout << Json{{"ok", true},
                       {"data", hex(response)},
                       {"elapsed_ms", elapsed()}}

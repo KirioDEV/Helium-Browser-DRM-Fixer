@@ -184,7 +184,8 @@ def main():
                 result = subprocess.run([str(args.probe), str(request_file)],
                                         capture_output=True, text=True, timeout=10)
                 if not result.stdout.strip():
-                    raise RuntimeError(f"{name}: probe failed without JSON: {result.stderr}")
+                    raise RuntimeError(f"{name}: probe failed without JSON "
+                                       f"(exit {result.returncode}): {result.stderr}")
                 response = json.loads(result.stdout)
                 if result.returncode != expected_code or response["ok"] != (expected_code == 0):
                     raise RuntimeError(f"{name}: unexpected result {result.returncode}: {response}")
@@ -232,6 +233,19 @@ def main():
         exercise("cancellation while stalled", "/cancel", 130, cancel_after_ms=100)
         exercise("cancellation while streaming", "/stream", 130, cancel_after_ms=150)
         exercise("DNS failure", "/ok", 1, dns_failure=True, expected_paths=[])
+        exercise("DNS lookup deadline", "/ok", 1, dns_ms=150,
+                 dns_delay_ms=1800, maximum_ms=1000, expected_paths=[])
+        exercise("total deadline includes DNS", "/ok", 1, total_ms=150,
+                 dns_ms=3000, dns_delay_ms=1800, maximum_ms=1000, expected_paths=[])
+        exercise("cancellation during DNS", "/ok", 130, dns_delay_ms=1800,
+                 cancel_after_ms=100, maximum_ms=1000, expected_paths=[])
+        exercise("slow DNS success", "/ok", dns_delay_ms=100,
+                 expected_paths=["/ok"])
+        exercise("DNS consumes redirect budget", "/redirect", 1,
+                 dns_delay_ms=200, total_ms=350, maximum_ms=1200,
+                 expected_paths=["/redirect"])
+        exercise("abandoned DNS worker lifetime and reuse", "/ok",
+                 dns_lifecycle=True, maximum_ms=2500, expected_paths=["/ok"])
         exercise("empty DNS answer", "/ok", 1, dns_answers=[[]], expected_paths=[])
         exercise("public IPv4 DNS answer", "/ok", dns_answers=[["8.8.8.8"]],
                  expected_paths=["/ok"])
@@ -251,6 +265,22 @@ def main():
                  dns_answers=[["8.8.8.8"], ["127.0.0.1"]], expected_paths=["/redirect"])
         exercise("recheck DNS on redirect with mixed answer", "/redirect", 4,
                  dns_answers=[["8.8.8.8"], ["8.8.8.8", "::1"]], expected_paths=["/redirect"])
+        # Exercise process teardown repeatedly without TLS callbacks, isolating
+        # the resolver thread's lifetime from the HTTP implementation.
+        request_file = root / "dns-shutdown.json"
+        request_file.write_text(json.dumps({"port": 1, "url": "https://dl.google.com/ok",
+                                           "dns_failure": True}), encoding="utf-8")
+        for iteration in range(50):
+            result = subprocess.run([str(args.probe), str(request_file)],
+                                    capture_output=True, text=True, timeout=5)
+            if result.returncode != 1 or not result.stdout.strip():
+                raise RuntimeError(f"Resolver shutdown {iteration}: exit {result.returncode}: "
+                                   f"{result.stdout}{result.stderr}")
+            response = json.loads(result.stdout)
+            if response["message"] != "Cannot resolve trusted host":
+                raise RuntimeError(f"Resolver shutdown {iteration}: {response}")
+        passed += 1
+        print("50 resolver worker shutdown cycles: passed", flush=True)
         print(f"{passed} native HTTPS scenarios and production isolation passed")
 
 

@@ -156,6 +156,21 @@ IP; TLS-SNI, Zertifikatsprüfung und HTTP-Host behalten den ursprünglichen Host
 Die Fixture prüft diese Trennung ausdrücklich auch mit einem nur für die IP
 gültigen Zertifikat. DNS-Antworten sind hierbei simuliert; der System-Resolver
 wird nicht umkonfiguriert.
+
+Die DNS-Vorabfrage wartet höchstens zehn Sekunden und zählt zum gemeinsamen
+120-Sekunden-Anfragebudget. Ein Abbruch wird auch während einer blockierten
+Namensauflösung verarbeitet. Ein einzelner Worker kapselt den System-Resolver:
+Eine vom Betriebssystem noch nicht beendete Auflösung kann im Hintergrund
+weiterlaufen, startet aber keine Verbindung. Bis sie zurückkehrt, werden weitere
+Auflösungsversuche mit einer Fehlermeldung abgelehnt; es werden keine weiteren
+Worker oder Warteschlangen angelegt.
+
+`tests/dns_blackhole.py` prüft zusätzlich den echten Linux-System-Resolver mit
+der normalen CLI. Das Skript benötigt einen isolierten Container mit
+`--network none --dns 127.0.0.1` und Berechtigung zum Binden an UDP-Port 53.
+Es beantwortet DNS-Anfragen absichtlich nicht und prüft Zeitlimit, SIGINT-Abbruch
+und Programmende, ohne Resolver-Einstellungen selbst zu ändern. Dieser separate
+Container-Test gehört nicht zum normalen CTest-Lauf.
 Es werden keine Test-Zertifikate in den System-Vertrauensspeicher importiert.
 Die dafür separat gebaute `fixer_network_tests`-Datei wird nicht mit installiert.
 Die normale EXE enthält keine Loopback- oder Test-Zertifikatskonfiguration.
