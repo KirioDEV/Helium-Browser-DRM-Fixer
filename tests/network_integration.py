@@ -17,8 +17,8 @@ class Server(http.server.ThreadingHTTPServer):
     daemon_threads = True
     block_on_close = False
 
-    def __init__(self, certificate, key):
-        super().__init__(("127.0.0.1", 0), Handler)
+    def __init__(self, certificate, key, host="127.0.0.1", port=0):
+        super().__init__((host, port), Handler)
         self.requests = []
         self.hosts = []
         self.server_names = []
@@ -233,6 +233,8 @@ def main():
         exercise("cancellation while stalled", "/cancel", 130, cancel_after_ms=100)
         exercise("cancellation while streaming", "/stream", 130, cancel_after_ms=150)
         exercise("DNS failure", "/ok", 1, dns_failure=True, expected_paths=[])
+        exercise("system DNS cannot mix injected answers", "/ok", 4,
+                 system_dns=True, dns_answers=[["8.8.8.8"]], expected_paths=[])
         exercise("DNS lookup deadline", "/ok", 1, dns_ms=150,
                  dns_delay_ms=1800, maximum_ms=1000, expected_paths=[])
         exercise("total deadline includes DNS", "/ok", 1, total_ms=150,

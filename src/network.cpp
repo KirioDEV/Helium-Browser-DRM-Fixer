@@ -318,7 +318,7 @@ IpAddress connection_address(const Url &url, const RequestContext &context) {
     return resolve_public(host);
   };
 #ifdef FIXER_NETWORK_TESTING
-  if (context.fixture) {
+  if (context.fixture && !context.fixture->system_dns) {
     const auto &settings = *context.fixture;
     std::optional<std::vector<std::string>> answers;
     if (settings.dns_answers) {
@@ -566,7 +566,7 @@ Response request_once(const Url &url, const std::string &body,
                          sizeof(remote)) == selected,
           "Connected HTTPS peer differs from pinned DNS address");
 #ifdef FIXER_NETWORK_TESTING
-  if (context.fixture) {
+  if (context.fixture && !context.fixture->system_dns) {
     require(
         remote.ss_family == AF_INET &&
             reinterpret_cast<const sockaddr_in *>(&remote)->sin_addr.s_addr ==
@@ -839,6 +839,10 @@ Bytes testing::network_request(const NetworkSettings &settings,
               settings.dns_ms > 0 && settings.dns_ms <= 60000 &&
               settings.dns_delay_ms >= 0 && settings.dns_delay_ms <= 5000,
           "Invalid network fixture settings");
+  require(
+      !settings.system_dns || (!settings.dns_answers && !settings.dns_failure &&
+                               settings.dns_delay_ms == 0),
+      "System DNS fixture cannot inject DNS answers");
   const RequestContext context{std::chrono::steady_clock::now() +
                                    std::chrono::milliseconds(settings.total_ms),
                                &settings};

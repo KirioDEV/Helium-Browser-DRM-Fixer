@@ -49,6 +49,7 @@ int main(int argc, char **argv) {
     settings.dns_ms = config.value("dns_ms", 1500L);
     settings.dns_delay_ms = config.value("dns_delay_ms", 0L);
     settings.dns_failure = config.value("dns_failure", false);
+    settings.system_dns = config.value("system_dns", false);
     if (config.contains("dns_answers"))
       settings.dns_answers =
           config.at("dns_answers").get<std::vector<std::vector<std::string>>>();

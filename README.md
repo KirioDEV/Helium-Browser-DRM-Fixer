@@ -171,6 +171,25 @@ der normalen CLI. Das Skript benötigt einen isolierten Container mit
 Es beantwortet DNS-Anfragen absichtlich nicht und prüft Zeitlimit, SIGINT-Abbruch
 und Programmende, ohne Resolver-Einstellungen selbst zu ändern. Dieser separate
 Container-Test gehört nicht zum normalen CTest-Lauf.
+
+`tests/dns_rebinding.py` prüft sieben weitere Fälle pro Linux-Compiler mit einem
+echten DNS-Server und dem System-Resolver: IP-Pinning trotz Rebinding, erneute
+Prüfung bei Redirects, zulässiger Wechsel auf eine andere öffentliche IP,
+gemischte öffentliche/private IPv4-/IPv6-Antworten, private Antwort und NXDOMAIN.
+Ein separater Container benötigt dafür
+`--network none --dns 127.0.0.1 --cap-add NET_ADMIN`. Das Skript verlangt Docker
+mit ausschließlich dem Loopback-Interface und fügt nur dort zwei öffentliche
+Test-IP-Adressen hinzu. Es verwendet den getrennten `fixer_network_tests`-Build
+und eine private CA-Datei; der normale Build erhält keine Testkonfiguration.
+TLS-SNI und HTTP-Host bleiben beim erlaubten Hostnamen, und der private
+Rebinding-Zielserver darf keinen Kontakt erhalten. DNS-Einstellungen und
+Zertifikatsspeicher des Hosts werden nicht geändert. Auch dieser Test läuft
+separat von CTest; im Container wird er mit den Testprogrammen aufgerufen:
+
+```sh
+python3 /source/tests/dns_rebinding.py /build/gcc/fixer_network_tests /build/clang/fixer_network_tests
+```
+
 Es werden keine Test-Zertifikate in den System-Vertrauensspeicher importiert.
 Die dafür separat gebaute `fixer_network_tests`-Datei wird nicht mit installiert.
 Die normale EXE enthält keine Loopback- oder Test-Zertifikatskonfiguration.
