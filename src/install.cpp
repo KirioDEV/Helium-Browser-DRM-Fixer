@@ -197,8 +197,10 @@ void install_cdm(const fs::path &target, const Cdm &cdm,
               manifest["version"] == cdm.version,
           "Invalid source manifest version");
   const auto space = fs::space(target.parent_path());
-  require(space.available >= cdm.manifest.size() + cdm.library.size() +
-                                 cdm.license.size() + 1024 * 1024,
+  require(space.available != static_cast<std::uintmax_t>(-1) &&
+              space.available <= space.capacity &&
+              space.available >= cdm.manifest.size() + cdm.library.size() +
+                                     cdm.license.size() + 1024 * 1024,
           "Insufficient free space", Code::failure);
   const Directory parent(target.parent_path());
   const auto state = init_state(parent, target);

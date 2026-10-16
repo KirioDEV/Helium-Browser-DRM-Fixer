@@ -206,10 +206,39 @@ void private_owner_tests(const fs::path &root) {
 }
 #endif
 
-#ifndef _WIN32
-// This deliberately consumes real blocks on a dedicated, bounded tmpfs. Never
-// run it on an ordinary profile or build filesystem.
+// This deliberately consumes real blocks on a dedicated, bounded test volume.
+// Never run it on an ordinary profile or build filesystem.
 void fill_test_filesystem(const fs::path &path, std::uintmax_t leave) {
+#ifdef _WIN32
+  struct File {
+    HANDLE value;
+    ~File() {
+      if (value != INVALID_HANDLE_VALUE) CloseHandle(value);
+    }
+  } file{CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
+                     FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT |
+                         FILE_FLAG_WRITE_THROUGH,
+                     nullptr)};
+  expect(file.value != INVALID_HANDLE_VALUE,
+         "Cannot create disk-space fixture");
+  const Bytes block(4096, 'x');
+  bool disk_full = false;
+  for (std::size_t count = 0; count < 8192; ++count) {
+    if (leave && fs::space(path.parent_path()).available <= leave) break;
+    DWORD written = 0;
+    if (!WriteFile(file.value, block.data(), static_cast<DWORD>(block.size()),
+                   &written, nullptr)) {
+      const auto error = GetLastError();
+      expect(error == ERROR_DISK_FULL || error == ERROR_HANDLE_DISK_FULL,
+             "Filler failed for a reason other than disk full");
+      disk_full = true;
+      break;
+    }
+    expect(written > 0, "Filler write made no progress");
+  }
+  expect(leave ? fs::space(path.parent_path()).available <= leave : disk_full,
+         "Failed to exhaust bounded test volume");
+#else
   const int fd =
       open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
   expect(fd >= 0, "Cannot create disk-space fixture");
@@ -232,9 +261,24 @@ void fill_test_filesystem(const fs::path &path, std::uintmax_t leave) {
   }
   expect(leave ? fs::space(path.parent_path()).available <= leave : enospc,
          "Failed to exhaust bounded test filesystem");
+#endif
 }
 
 void transaction_space_tests(const fs::path &parent) {
+#ifdef _WIN32
+  assert_safe_path(parent, false);
+  wchar_t volume[MAX_PATH]{}, label[64]{}, filesystem[64]{};
+  expect(GetVolumePathNameW(parent.c_str(), volume, MAX_PATH) != 0 &&
+             GetVolumeInformationW(volume, label, 64, nullptr, nullptr, nullptr,
+                                   filesystem, 64) != 0 &&
+             std::wstring(label) == L"FIXER_SPACE_TEST" &&
+             std::wstring(filesystem) == L"NTFS" && fs::is_empty(parent),
+         "Windows space tests require an empty FIXER_SPACE_TEST NTFS volume");
+  const auto space = fs::space(parent);
+  expect(
+      space.capacity <= 32 * 1024 * 1024 && space.available >= 2 * 1024 * 1024,
+      "Windows space tests require a dedicated 2-32 MiB volume");
+#else
   struct statfs filesystem{};
   expect(statfs(parent.c_str(), &filesystem) == 0 &&
              filesystem.f_type == TMPFS_MAGIC && fs::is_empty(parent),
@@ -243,6 +287,7 @@ void transaction_space_tests(const fs::path &parent) {
   expect(
       space.capacity <= 16 * 1024 * 1024 && space.available >= 2 * 1024 * 1024,
       "Transaction space tests require a dedicated 2-16 MiB filesystem");
+#endif
   unsigned scenarios = 0;
   for (const bool had_old : {false, true}) {
     for (const bool restoring : {false, true}) {
@@ -254,6 +299,15 @@ void transaction_space_tests(const fs::path &parent) {
                                                "old_renamed", "old_moved",
                                                "new_renamed", "new_moved"};
       for (const auto &phase : phases) {
+#ifdef _WIN32
+        // Small first-install journals can remain resident in NTFS's MFT and
+        // legitimately commit even when no data clusters remain. Use an old
+        // installation with a larger inventory to force real journal I/O.
+        if (!had_old && phase != "staging") continue;
+#endif
+        std::cout << "Disk-full case: " << (had_old ? "existing" : "empty")
+                  << (restoring ? " restore " : " install ") << phase
+                  << std::endl;
         const auto root = parent / ("transaction-space-" + random_id());
         create_private_dir(root);
         struct Cleanup {
@@ -265,6 +319,12 @@ void transaction_space_tests(const fs::path &parent) {
         } cleanup{root};
         const auto target = root / "WidevineCdm";
         if (had_old) install_cdm(target, fixture("1.2.3.4"));
+#ifdef _WIN32
+        if (had_old)
+          for (unsigned index = 0; index < 32; ++index)
+            write_text(target / ("preserved-fixture-" + std::to_string(index)),
+                       "original extra file");
+#endif
         const auto old_files = had_old ? snapshot(target) : Json::object();
         auto replacement = fixture("2.0.0.0");
         replacement.library.resize(256 * 1024);
@@ -274,7 +334,12 @@ void transaction_space_tests(const fs::path &parent) {
         Code result = Code::failure;
         const InstallHooks hooks{{[&](const std::string &current) {
           if (current != phase || injected) return;
-          fill_test_filesystem(filler, phase == "staging" ? 64 * 1024 : 0);
+#ifdef _WIN32
+          constexpr auto staging_space = 128 * 1024;
+#else
+          constexpr auto staging_space = 64 * 1024;
+#endif
+          fill_test_filesystem(filler, phase == "staging" ? staging_space : 0);
           injected = true;
         }}};
         try {
@@ -293,6 +358,26 @@ void transaction_space_tests(const fs::path &parent) {
                                              : Code::recovery),
                "Wrong disk-full error classification: " + phase);
         fs::remove(filler);
+#ifdef _WIN32
+        // NTFS may reclaim an unlinked file asynchronously after the final
+        // handle closes. Wait for the deliberately consumed clusters to return.
+        bool reclaimed = false;
+        ULARGE_INTEGER available{}, total{}, free{};
+        for (unsigned attempt = 0; attempt < 1000; ++attempt) {
+          expect(GetDiskFreeSpaceExW(parent.c_str(), &available, &total, &free),
+                 "Cannot query test volume after releasing filler");
+          if (available.QuadPart <= total.QuadPart &&
+              available.QuadPart >= 2 * 1024 * 1024) {
+            reclaimed = true;
+            break;
+          }
+          Sleep(10);
+        }
+        expect(reclaimed, "NTFS did not reclaim the deleted filler in time: " +
+                              std::to_string(available.QuadPart) + "/" +
+                              std::to_string(total.QuadPart) + "/" +
+                              std::to_string(free.QuadPart));
+#endif
         const auto state = root / ".helium-drm-fixer";
         if (phase == "staging") {
           expect(!has_transaction(target), "Failed stage published a journal");
@@ -302,6 +387,7 @@ void transaction_space_tests(const fs::path &parent) {
           for (const auto &entry : fs::recursive_directory_iterator(state)) {
             if (entry.path().filename() == binary_name())
               partial_binary =
+                  fs::file_size(entry.path()) > 0 &&
                   fs::file_size(entry.path()) < replacement.library.size();
           }
           expect(partial_binary, "Staging test did not leave a partial write");
@@ -346,10 +432,63 @@ void transaction_space_tests(const fs::path &parent) {
       }
     }
   }
-  std::cout << scenarios
-            << " real ENOSPC staging/installation/recovery scenarios passed\n";
+  std::cout
+      << scenarios
+      << " real disk-full staging/installation/recovery scenarios passed\n";
 }
 
+#ifdef _WIN32
+void windows_space_tests(const fs::path &parent) {
+  // Run the volume guards before creating even a single fixture file.
+  transaction_space_tests(parent);
+  const auto root = parent / ("journal-space-" + random_id());
+  create_private_dir(root);
+  struct Cleanup {
+    fs::path root;
+    ~Cleanup() {
+      std::error_code ignored;
+      fs::remove_all(root, ignored);
+    }
+  } cleanup{root};
+  write_text(root / "journal.json", "original journal");
+  fill_test_filesystem(root / "filler", 128 * 1024);
+  const auto before = snapshot(root);
+  bool rejected_preflight = false;
+  try {
+    install_cdm(root / "WidevineCdm", fixture("1.2.3.4"));
+  } catch (const Error &error) {
+    rejected_preflight = error.code == Code::failure &&
+                         std::string(error.what()) == "Insufficient free space";
+  }
+  expect(rejected_preflight && snapshot(root) == before,
+         "Disk-full preflight changed the test filesystem");
+  auto failed_write = [&](const auto &write) {
+    bool failed = false;
+    try {
+      write();
+    } catch (const Error &error) {
+      failed = error.code == Code::failure &&
+               std::string(error.what()) == "Write failed";
+    }
+    expect(failed, "Expected a real Windows journal write failure");
+    expect(snapshot(root) == before,
+           "Disk-full journal replacement lost original data or left a "
+           "temporary file");
+  };
+  failed_write([&] {
+    replace_text(root / "journal.json", std::string(256 * 1024, 'x'));
+  });
+  {
+    const Directory directory(root);
+    failed_write([&] {
+      directory.replace("journal.json", std::string(256 * 1024, 'x'));
+    });
+  }
+  std::cout << "13 native Windows disk-full scenarios passed\n";
+}
+#endif
+
+#ifndef _WIN32
 void transaction_binding_tests(const fs::path &root) {
   unsigned index = 0;
   for (const bool restoring : {false, true}) {
@@ -434,6 +573,10 @@ int main(int argc, char **argv) {
     argument_pointers.push_back(nullptr);
     argc = count;
     argv = argument_pointers.data();
+    if (argc == 3 && std::string(argv[1]) == "--windows-space") {
+      windows_space_tests(fs::absolute(from_utf8(argv[2])));
+      return 0;
+    }
 #endif
 #ifndef _WIN32
     if (argc == 3 && std::string(argv[1]) == "--transaction-space") {

@@ -16,6 +16,10 @@ jobs:
         run: cmake --build build/msvc --config Release --parallel 4
       - name: Test
         run: ctest --test-dir build/msvc -C Release --output-on-failure
+      - name: Native NTFS disk-full failures
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./tools/test_windows_space.ps1 -TestExecutable ./build/msvc/Release/fixer_tests.exe
       - name: Package
         run: cmake --install build/msvc --config Release --prefix build/package
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

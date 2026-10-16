@@ -229,6 +229,23 @@ Speicherplatzes. Die Linux-CI richtet dafür ein eigenes 8-MiB-tmpfs ein.
 Im Docker-Testskript aktiviert `FIXER_SPACE_TEST_ROOT` diese Fälle für beide
 Compiler; der Pfad muss auf ein entsprechend eingebundenes Test-tmpfs zeigen.
 
+Unter Windows prüft ein separates Skript echte NTFS-Platzmangelfehler:
+
+```powershell
+# In einer Administrator-Sitzung nach dem Build:
+./tools/test_windows_space.ps1 -TestExecutable ./cmake-build-debug/fixer_tests.exe
+```
+
+Es erzeugt ein neues, auf 32 MiB begrenztes VHD im Build-Verzeichnis, prüft
+dessen Identität vor dem Partitionieren/Formatieren und entfernt es anschließend.
+Bestehende Datenträger werden nicht als Testziel angenommen. Der native Test
+verlangt zusätzlich ein kleines NTFS-Volume mit dem Label `FIXER_SPACE_TEST`.
+Die Fälle prüfen teilweises Staging, Update-/Restore-Grenzen, Speicherplatz-
+Vorprüfung und fehlgeschlagenen Journalersatz samt Erhalt der Originaldateien.
+Kleine Erstinstallationsjournale können in der NTFS-MFT verbleiben; deshalb
+verwenden die Journal-Fehlerfälle eine bestehende Installation mit größerem Inventar.
+Dieser Administrator-Test läuft separat von CTest und als eigener Windows-CI-Schritt.
+
 Das Docker-Testskript `tools/run_linux_tests.sh` fuzztestet standardmäßig
 60 Sekunden. `FIXER_FUZZ_SECONDS` erlaubt 1 bis 3600 Sekunden; ein längerer
 Lauf ersetzt keine umfassende Sicherheitsprüfung.
