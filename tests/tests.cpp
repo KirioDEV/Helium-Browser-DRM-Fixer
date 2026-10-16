@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <map>
+#include <sstream>
 
 #include "directory.hpp"
 #include "fixer.hpp"
@@ -102,6 +103,169 @@ Json snapshot(const fs::path &root) {
       out[utf8(entry.path().lexically_relative(root))] = "directory";
   }
   return out;
+}
+
+void operation_progress_tests(const fs::path &root) {
+  struct Capture {
+    std::ostringstream out, err;
+    std::streambuf *old_out = std::cout.rdbuf(out.rdbuf());
+    std::streambuf *old_err = std::cerr.rdbuf(err.rdbuf());
+    ~Capture() {
+      std::cout.rdbuf(old_out);
+      std::cerr.rdbuf(old_err);
+    }
+  } capture;
+  const auto source = root / "progress-source";
+  const auto profile = root / "progress-profile";
+  create_private_dir(source);
+  create_private_dir(profile);
+  const auto replacement = fixture("2.0.0.0");
+  write_file(source / "manifest.json", replacement.manifest);
+  write_file(source / binary_name(), replacement.library);
+  const auto target = profile / "WidevineCdm";
+  install_cdm(target, fixture("1.2.3.4"));
+  const auto old = snapshot(target);
+  Options options;
+  options.target = target;
+  options.source = "chrome";
+  options.chrome = source;
+  std::vector<ProgressPhase> phases;
+  bool metadata_valid = true;
+  const auto result =
+      execute_operation(options, [&](const ProgressEvent &event) {
+        phases.push_back(event.phase);
+        metadata_valid = metadata_valid && event.target == target;
+        if (event.phase == ProgressPhase::source_ready)
+          metadata_valid =
+              metadata_valid && event.version == "2.0.0.0" &&
+              event.source.find("not publisher-verified") != std::string::npos;
+        if (event.phase == ProgressPhase::completed)
+          metadata_valid =
+              metadata_valid && !has_transaction(target) &&
+              read_cdm(installed_cdm_dir(target)).version == "2.0.0.0";
+      });
+  const std::vector<ProgressPhase> expected{
+      ProgressPhase::target_resolved,
+      ProgressPhase::checking_source,
+      ProgressPhase::trusting_local_source,
+      ProgressPhase::source_ready,
+      ProgressPhase::preparing,
+      ProgressPhase::preserving_previous,
+      ProgressPhase::installing,
+      ProgressPhase::verifying_installation,
+      ProgressPhase::completed};
+  expect(phases == expected && metadata_valid && result.target == target &&
+             result.version == "2.0.0.0" && !result.restored,
+         "Active core progress order, metadata or completion was incorrect");
+  Options restore;
+  restore.target = target;
+  restore.restore = true;
+  phases.clear();
+  const auto restored = execute_operation(
+      restore,
+      [&](const ProgressEvent &event) { phases.push_back(event.phase); });
+  expect(
+      restored.restored && restored.version.empty() &&
+          snapshot(target) == old &&
+          phases ==
+              std::vector<ProgressPhase>{
+                  ProgressPhase::target_resolved, ProgressPhase::restoring,
+                  ProgressPhase::restore_validated,
+                  ProgressPhase::restore_current_preserved,
+                  ProgressPhase::finalizing_restore, ProgressPhase::completed},
+      "Structured restore did not preserve the original installation");
+  const ProgressObserver broken = [](const ProgressEvent &) {
+    throw Error("Presentation failed");
+  };
+  expect(execute_operation(options, broken).version == "2.0.0.0" &&
+             !has_transaction(target),
+         "Observer exception interrupted install");
+  expect(execute_operation(restore, broken).restored && snapshot(target) == old,
+         "Observer exception interrupted restore");
+  (void)execute_operation(options, [&](const ProgressEvent &event) {
+    if (event.phase == ProgressPhase::completed) cancelled.store(true);
+  });
+  expect(cancelled.load() && !has_transaction(target) &&
+             read_cdm(installed_cdm_dir(target)).version == "2.0.0.0",
+         "Late cancellation reclassified a committed installation");
+  cancelled.store(false);
+  (void)execute_operation(restore, [&](const ProgressEvent &event) {
+    if (event.phase == ProgressPhase::restore_validated) cancelled.store(true);
+  });
+  expect(
+      cancelled.load() && snapshot(target) == old && !has_transaction(target),
+      "Cancellation interrupted critical restore");
+  cancelled.store(false);
+  for (const auto cancel_at :
+       {ProgressPhase::checking_source, ProgressPhase::source_ready,
+        ProgressPhase::preparing, ProgressPhase::preserving_previous,
+        ProgressPhase::installing, ProgressPhase::verifying_installation}) {
+    bool requested = false, completed = false, correct_code = false;
+    try {
+      (void)execute_operation(options, [&](const ProgressEvent &event) {
+        if (event.phase == cancel_at) {
+          requested = true;
+          cancelled.store(true);
+        }
+        if (event.phase == ProgressPhase::completed) completed = true;
+      });
+    } catch (const Error &error) {
+      correct_code = error.code == Code::cancelled;
+    }
+    cancelled.store(false);
+    expect(requested && correct_code && !completed && snapshot(target) == old &&
+               !has_transaction(target),
+           "Progress cancellation lost original state");
+  }
+  const auto before = snapshot(root);
+  auto bad_package = options;
+  bad_package.source = "package";
+  bad_package.chrome.clear();
+  bad_package.package = source / "manifest.json";
+  phases.clear();
+  bool invalid_package = false;
+  try {
+    (void)execute_operation(bad_package, [&](const ProgressEvent &event) {
+      phases.push_back(event.phase);
+    });
+  } catch (const Error &error) {
+    invalid_package = error.code == Code::security;
+  }
+  expect(
+      invalid_package && snapshot(root) == before &&
+          phases == std::vector<ProgressPhase>{ProgressPhase::target_resolved,
+                                               ProgressPhase::checking_source},
+      "Rejected source emitted preparation or completion");
+  bool queried = false, stopped = false;
+  try {
+    (void)acquire_google(false, [&](const ProgressEvent &event) {
+      queried = event.phase == ProgressPhase::querying_release;
+      cancelled.store(true);
+    });
+  } catch (const Error &error) {
+    stopped = error.code == Code::cancelled;
+  }
+  cancelled.store(false);
+  expect(queried && stopped && snapshot(root) == before,
+         "Google acquisition did not cancel before querying or caching");
+  for (unsigned mode = 0; mode < 4; ++mode) {
+    auto bad = options;
+    if (mode == 0) bad.check = true;
+    if (mode == 1) bad.dry_run = true;
+    if (mode == 2) bad.source = "unknown";
+    if (mode == 3) bad.force = true;
+    bool correct_code = false, emitted = false;
+    try {
+      (void)execute_operation(bad,
+                              [&](const ProgressEvent &) { emitted = true; });
+    } catch (const Error &error) {
+      correct_code = error.code == Code::invalid;
+    }
+    expect(correct_code && !emitted && snapshot(root) == before,
+           "Active API accepted an invalid or read-only request");
+  }
+  expect(capture.out.str().empty() && capture.err.str().empty(),
+         "Active core wrote directly to the console");
 }
 
 void directory_tests(const fs::path &root) {
@@ -892,6 +1056,7 @@ int main(int argc, char **argv) {
     const auto root = fs::absolute(fs::temp_directory_path() /
                                    ("helium-fixer-test-" + random_id()));
     create_private_dir(root);
+    operation_progress_tests(root);
     directory_tests(root);
 #ifdef _WIN32
     private_owner_tests(root);

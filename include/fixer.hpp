@@ -127,6 +127,8 @@ struct Options {
 
 Options parse_options(const std::vector<std::string> &arguments);
 
+void validate_options(const Options &options);
+
 // Resolve once per operation. Restore must use a stable, exact target.
 fs::path resolve_target(const Options &options);
 
@@ -207,7 +209,51 @@ Release parse_release(const std::string &response);
 
 Release latest_release();
 
-Cdm acquire_google(bool force);
+enum class ProgressPhase {
+  target_resolved,
+  checking_source,
+  querying_release,
+  checking_cache,
+  downloading_package,
+  trusting_local_source,
+  source_ready,
+  preparing,
+  preserving_previous,
+  installing,
+  verifying_installation,
+  restoring,
+  restore_validated,
+  restore_current_preserved,
+  finalizing_restore,
+  completed
+};
+
+struct ProgressEvent {
+  ProgressPhase phase;
+  fs::path target;
+  std::string version;
+  std::string source;
+};
+
+// Called synchronously on the operation's thread. Copy events before queuing
+// them elsewhere. Observer exceptions cannot interrupt a transaction.
+using ProgressObserver = std::function<void(const ProgressEvent &)>;
+
+void notify_progress(const ProgressObserver &observer,
+                     const ProgressEvent &event) noexcept;
+
+Cdm acquire_google(bool force, const ProgressObserver &observer = {});
+
+struct OperationResult {
+  fs::path target;
+  std::string version;
+  bool restored = false;
+};
+
+// Active install/restore only; rejects inspection/help modes. No console
+// output.
+OperationResult execute_operation(const Options &options,
+                                  const ProgressObserver &observer = {});
 
 struct InstallHooks {
   std::function<void(const std::string &)> phase;

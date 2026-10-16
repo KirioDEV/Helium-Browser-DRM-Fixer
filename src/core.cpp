@@ -140,6 +140,11 @@ Options parse_options(const std::vector<std::string> &args) {
     else
       throw Error("Unknown option: " + flag, Code::invalid);
   }
+  validate_options(o);
+  return o;
+}
+
+void validate_options(const Options &o) {
   require(static_cast<int>(o.check) + static_cast<int>(o.dry_run) +
                   static_cast<int>(o.restore) <=
               1,
@@ -160,7 +165,6 @@ Options parse_options(const std::vector<std::string> &args) {
               (o.source == "google" && !o.check && !o.dry_run && !o.restore),
           "--force-download is only valid for an active Google installation",
           Code::invalid);
-  return o;
 }
 
 std::string help_text() {
@@ -205,6 +209,7 @@ fs::path resolve_target(const Options &o) {
 }
 
 int run(const Options &o) {
+  validate_options(o);
   if (o.help) {
     std::cout << help_text();
     return 0;
@@ -244,9 +249,9 @@ int run(const Options &o) {
     }
     return status.exit_code;
   }
-  const auto target = resolve_target(o);
-  if (o.verbose || o.dry_run) std::cout << "Target: " << utf8(target) << '\n';
   if (o.dry_run) {
+    const auto target = resolve_target(o);
+    std::cout << "Target: " << utf8(target) << '\n';
     std::cout << "Read-only plan. Source: " << o.source << ".\n";
     if (o.source == "chrome") {
       const auto source = o.chrome.empty() ? detect_chrome() : o.chrome;
@@ -264,54 +269,60 @@ int run(const Options &o) {
       std::cout << "Blocked by pending transaction; --restore is required.\n";
     return 0;
   }
-  ensure_browser_closed();
-  if (o.restore) {
-    std::cout << "Restoring the managed installation...\n";
-    restore_cdm(target);
+  const auto result = execute_operation(o, [&](const ProgressEvent &event) {
+    switch (event.phase) {
+      case ProgressPhase::target_resolved:
+        if (o.verbose) std::cout << "Target: " << utf8(event.target) << '\n';
+        break;
+      case ProgressPhase::checking_source:
+        std::cout << "Checking installation source...\n";
+        break;
+      case ProgressPhase::querying_release:
+        std::cout << "Querying Google for Widevine...\n";
+        break;
+      case ProgressPhase::checking_cache:
+        std::cout << "Rechecking cached package...\n";
+        break;
+      case ProgressPhase::downloading_package:
+        std::cout << "Downloading and verifying Widevine " << event.version
+                  << "...\n";
+        break;
+      case ProgressPhase::trusting_local_source:
+        std::cout << "Using explicitly trusted local Chrome files; publisher "
+                     "integrity is not verified.\n";
+        break;
+      case ProgressPhase::source_ready:
+        if (o.verbose)
+          std::cout << "Source: " << event.source
+                    << "\nVersion: " << event.version << '\n';
+        break;
+      case ProgressPhase::preparing:
+        std::cout << "Preparing Widevine " << event.version << "...\n";
+        break;
+      case ProgressPhase::preserving_previous:
+        std::cout << "Prepared files checked; preserving any existing "
+                     "installation...\n";
+        break;
+      case ProgressPhase::installing:
+        std::cout << "Installing prepared files...\n";
+        break;
+      case ProgressPhase::verifying_installation:
+        std::cout << "Checking installed files...\n";
+        break;
+      case ProgressPhase::restoring:
+        std::cout << "Restoring the managed installation...\n";
+        break;
+      default:
+        break;
+    }
+  });
+  if (result.restored)
     std::cout << "Recovery/restore completed. Restart Helium.\n";
-    return 0;
-  }
-  require(!has_transaction(target), "Pending transaction: use --restore first",
-          Code::recovery);
-  Cdm cdm;
-  std::cout << "Checking installation source...\n";
-  if (o.source == "google")
-    cdm = acquire_google(o.force);
-  else if (o.source == "package")
-    cdm = verify_crx(read_file(o.package, package_limit));
-  else {
-    const auto source =
-        o.chrome.empty() ? detect_chrome() : fs::absolute(o.chrome);
-    assert_safe_path(source, false);
-    const auto s = fs::weakly_canonical(source),
-               t = fs::weakly_canonical(target);
-    auto relative = s.lexically_relative(t);
-    require(s != t && (s.root_name() != t.root_name() ||
-                       (!relative.empty() && *relative.begin() == "..")),
-            "Source must be outside the target");
-    cdm = read_cdm(source);
-    cdm.origin = "explicit local Chrome source (not publisher-verified)";
-    std::cout << "Using explicitly trusted local Chrome files; publisher "
-                 "integrity is not verified.\n";
-  }
-  check_cancelled();
-  if (o.verbose)
-    std::cout << "Source: " << cdm.origin << "\nVersion: " << cdm.version
-              << '\n';
-  std::cout << "Preparing Widevine " << cdm.version << "...\n";
-  install_cdm(target, cdm, {{[](const std::string &phase) {
-                if (phase == "prepared")
-                  std::cout << "Prepared files checked; preserving any "
-                               "existing installation...\n";
-                else if (phase == "old_moved")
-                  std::cout << "Installing prepared files...\n";
-                else if (phase == "new_moved")
-                  std::cout << "Checking installed files...\n";
-              }}});
-  std::cout
-      << "Installed Widevine " << cdm.version
-      << ". Use --restore to restore the previous state.\n"
-         "Restart Helium. Streaming service compatibility is not guaranteed.\n";
+  else
+    std::cout << "Installed Widevine " << result.version
+              << ". Use --restore to restore the previous state.\n"
+                 "Restart Helium. Streaming service compatibility is not "
+                 "guaranteed.\n";
   return 0;
 }
 }  // namespace fixer

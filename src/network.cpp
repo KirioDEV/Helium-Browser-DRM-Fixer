@@ -3,7 +3,6 @@
 #include <chrono>
 #include <condition_variable>
 #include <exception>
-#include <iostream>
 #include <mutex>
 #include <optional>
 #include <set>
@@ -938,8 +937,9 @@ Release latest_release() {
       {reinterpret_cast<const char *>(bytes.data()), bytes.size()});
 }
 
-Cdm acquire_google(bool force) {
-  std::cout << "Querying Google for Widevine...\n";
+Cdm acquire_google(bool force, const ProgressObserver &observer) {
+  notify_progress(observer, {ProgressPhase::querying_release, {}, {}, {}});
+  check_cancelled();
   const auto release = latest_release();
   auto cache = cache_path();
   create_private_dir(cache);
@@ -948,11 +948,15 @@ Cdm acquire_google(bool force) {
       cache / (platform_name() + "-x64-" + release.checksum + ".crx3");
   Bytes bytes;
   if (!force && fs::exists(path)) {
-    std::cout << "Rechecking cached package...\n";
+    notify_progress(observer,
+                    {ProgressPhase::checking_cache, {}, release.version, {}});
+    check_cancelled();
     bytes = read_file(path, package_limit);
   } else {
-    std::cout << "Downloading and verifying Widevine " << release.version
-              << "...\n";
+    notify_progress(
+        observer,
+        {ProgressPhase::downloading_package, {}, release.version, {}});
+    check_cancelled();
     bytes = http_request(release.url, "", package_limit);
   }
   auto cdm = verify_crx(bytes, release.checksum);

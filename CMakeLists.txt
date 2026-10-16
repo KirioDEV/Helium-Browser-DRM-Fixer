@@ -32,7 +32,7 @@ FetchContent_Declare(miniz URL "${MINIZ_URL}"
     URL_HASH SHA256=98468f8924934b723276680f85238b6c78bf1f8b49b4459cc9b7214a20e2e9fb)
 FetchContent_MakeAvailable(json miniz)
 target_compile_definitions(miniz PUBLIC MINIZ_NO_ZLIB_COMPATIBLE_NAMES)
-add_library(fixer_core src/core.cpp src/status.cpp src/platform.cpp src/directory.cpp src/network.cpp src/package.cpp src/install.cpp)
+add_library(fixer_core src/core.cpp src/status.cpp src/operation.cpp src/platform.cpp src/directory.cpp src/network.cpp src/package.cpp src/install.cpp)
 target_include_directories(fixer_core PUBLIC include)
 target_link_libraries(fixer_core PUBLIC nlohmann_json::nlohmann_json PRIVATE miniz)
 target_compile_definitions(fixer_core PUBLIC FIXER_VERSION="${PROJECT_VERSION}")

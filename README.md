@@ -91,6 +91,28 @@ Bestands, Installation und lokale Nachprüfung. Bei einer Chrome-Quelle erschein
 auch ohne `--verbose` der Hinweis, dass ihre Herausgeberintegrität nicht geprüft
 wird. Erfolg wird erst nach der abschließenden lokalen Prüfung gemeldet.
 
+Der C++-Kern stellt aktive Vorgänge über
+`execute_operation(const Options&, const ProgressObserver&)` bereit. Er liefert
+typisierte Phasenereignisse für Quellenprüfung, Google-Abfrage/Cache/Download,
+Vorbereitung, Installation, Nachprüfung und Restore sowie ein `OperationResult`.
+Die CLI erzeugt daraus ihre Textmeldungen; der aktive Kern schreibt selbst nicht
+auf stdout/stderr. Check-, Plan- und Hilfemodi werden von dieser aktiven API
+abgelehnt. Auch direkte C++-Aufrufer durchlaufen die Optionsvalidierung.
+
+Callbacks laufen synchron im ausführenden Thread. Eine spätere UI muss Ereignisse
+kopieren und an ihren UI-Thread weiterreichen; Callbacks müssen kurz bleiben und
+dürfen keine verschachtelten Operationen starten. Callback-Ausnahmen werden
+abgefangen, damit eine Anzeige keinen Rollback auslöst oder einen bereits
+gespeicherten Erfolg in einen Fehler umwandelt. Abbruch erfolgt weiterhin über
+das gemeinsame Abbruchsignal. Nach Beginn der kritischen Wiederherstellung wird
+diese sicher zu Ende geführt; ein erst nach dem Commit eintreffender Abbruch
+macht die abgeschlossene Installation nicht rückwirkend erfolglos.
+`completed` wird ausschließlich nach erfolgreichem Abschluss ausgegeben.
+Die Ereignisse sind Phasenmeldungen; sie liefern keine Prozent- oder Bytezähler.
+Versionsangaben in Download-/Cachephasen stammen zunächst aus Update-Metadaten.
+Erst `source_ready` folgt auf die jeweilige Quellenprüfung; lokale Chrome-Dateien
+bleiben dabei ausdrücklich ohne nachgewiesene Herausgeberintegrität.
+
 `--helium-path` bezeichnet immer den **exakten WidevineCdm-Ordner**, nicht den
 Helium-Anwendungsordner. Beispiel unter Windows:
 
@@ -242,6 +264,10 @@ Prüfungen; beim normalen lokalen Build werden fehlende Voraussetzungen gemeldet
 
 Die Fehlerfalltests prüfen außerdem Abbruch mit Rollback, manipulierte Backups
 und Journale, Hardlinks sowie unter Windows gesperrte DLLs. Ein zusätzlicher
+Kernschnittstellen-Test prüft Phasenreihenfolge, Metadaten, Callback-Ausnahmen,
+Abbruch an sechs Installationsgrenzen, kritisches Restore und fehlende direkte
+Konsolenausgabe. Die aktiven API-Aufrufe verwenden ausschließlich synthetische CDMs.
+Ein zusätzlicher
 CTest-Lauf führt 38 Szenarien mit der tatsächlichen Programmdatei aus:
 Installation, Update, Restore, Crash-Recovery, Exitcodes und Unicode-Pfade.
 Er verwendet ausschließlich synthetische PE-/ELF-Header in separaten temporären
