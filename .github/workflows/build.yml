@@ -43,6 +43,12 @@ jobs:
         run: ctest --preset debug
       - name: Unprivileged write-permission failure
         run: build/debug/fixer_tests --permission-denied
+      - name: Real disk-full transaction failures
+        run: |
+          space_root=$(mktemp -d)
+          trap 'sudo umount "$space_root"; rmdir "$space_root"' EXIT
+          sudo mount -t tmpfs -o size=8m,mode=1777 tmpfs "$space_root"
+          build/debug/fixer_tests --transaction-space "$space_root"
       - name: Fuzz smoke test
         if: matrix.compiler == 'clang'
         run: |

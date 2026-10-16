@@ -9,7 +9,12 @@
 #ifdef _WIN32
 #include <windows.h>
 #else
+#include <fcntl.h>
+#include <linux/magic.h>
+#include <sys/vfs.h>
 #include <unistd.h>
+
+#include <cerrno>
 #endif
 
 using namespace fixer;
@@ -152,6 +157,149 @@ void directory_tests(const fs::path &root) {
 }
 
 #ifndef _WIN32
+// This deliberately consumes real blocks on a dedicated, bounded tmpfs. Never
+// run it on an ordinary profile or build filesystem.
+void fill_test_filesystem(const fs::path &path, std::uintmax_t leave) {
+  const int fd =
+      open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
+  expect(fd >= 0, "Cannot create disk-space fixture");
+  struct Close {
+    int fd;
+    ~Close() { close(fd); }
+  } close_file{fd};
+  const Bytes block(4096, 'x');
+  bool enospc = false;
+  for (std::size_t count = 0; count < 8192; ++count) {
+    if (leave && fs::space(path.parent_path()).available <= leave) break;
+    const auto written = write(fd, block.data(), block.size());
+    if (written < 0) {
+      if (errno == EINTR) continue;
+      expect(errno == ENOSPC, "Filler failed for a reason other than ENOSPC");
+      enospc = true;
+      break;
+    }
+    expect(written > 0, "Filler write made no progress");
+  }
+  expect(leave ? fs::space(path.parent_path()).available <= leave : enospc,
+         "Failed to exhaust bounded test filesystem");
+}
+
+void transaction_space_tests(const fs::path &parent) {
+  struct statfs filesystem{};
+  expect(statfs(parent.c_str(), &filesystem) == 0 &&
+             filesystem.f_type == TMPFS_MAGIC && fs::is_empty(parent),
+         "Transaction space tests require an empty, dedicated tmpfs");
+  const auto space = fs::space(parent);
+  expect(
+      space.capacity <= 16 * 1024 * 1024 && space.available >= 2 * 1024 * 1024,
+      "Transaction space tests require a dedicated 2-16 MiB filesystem");
+  unsigned scenarios = 0;
+  for (const bool had_old : {false, true}) {
+    for (const bool restoring : {false, true}) {
+      const std::vector<std::string> phases =
+          restoring ? std::vector<std::string>{"restore_validated",
+                                               "restore_current_moved",
+                                               "restore_backup_moved"}
+                    : std::vector<std::string>{"staging",     "prepared",
+                                               "old_renamed", "old_moved",
+                                               "new_renamed", "new_moved"};
+      for (const auto &phase : phases) {
+        const auto root = parent / ("transaction-space-" + random_id());
+        create_private_dir(root);
+        struct Cleanup {
+          fs::path root;
+          ~Cleanup() {
+            std::error_code ignored;
+            fs::remove_all(root, ignored);
+          }
+        } cleanup{root};
+        const auto target = root / "WidevineCdm";
+        if (had_old) install_cdm(target, fixture("1.2.3.4"));
+        const auto old_files = had_old ? snapshot(target) : Json::object();
+        auto replacement = fixture("2.0.0.0");
+        replacement.library.resize(256 * 1024);
+        if (restoring) install_cdm(target, replacement);
+        const auto filler = root / "filler";
+        bool injected = false, failed = false;
+        Code result = Code::failure;
+        const InstallHooks hooks{{[&](const std::string &current) {
+          if (current != phase || injected) return;
+          fill_test_filesystem(filler, phase == "staging" ? 64 * 1024 : 0);
+          injected = true;
+        }}};
+        try {
+          if (restoring)
+            restore_cdm(target, hooks);
+          else
+            install_cdm(target, replacement, hooks);
+        } catch (const Error &error) {
+          failed = true;
+          result = error.code;
+        }
+        expect(injected && failed,
+               "Disk-full transaction did not fail: " + phase);
+        expect(result == (phase == "staging" ? Code::failure
+                          : restoring        ? Code::failure
+                                             : Code::recovery),
+               "Wrong disk-full error classification: " + phase);
+        fs::remove(filler);
+        const auto state = root / ".helium-drm-fixer";
+        if (phase == "staging") {
+          expect(!has_transaction(target), "Failed stage published a journal");
+          expect(had_old ? snapshot(target) == old_files : !fs::exists(target),
+                 "Failed stage changed original installation");
+          bool partial_binary = false;
+          for (const auto &entry : fs::recursive_directory_iterator(state)) {
+            if (entry.path().filename() == binary_name())
+              partial_binary =
+                  fs::file_size(entry.path()) < replacement.library.size();
+          }
+          expect(partial_binary, "Staging test did not leave a partial write");
+          install_cdm(target, replacement);
+          restore_cdm(target);
+          expect(had_old ? snapshot(target) == old_files : !fs::exists(target),
+                 "Failed stage prevented a subsequent installation/restore");
+        } else {
+          expect(has_transaction(target) ==
+                     !(restoring && phase == "restore_validated"),
+                 "Wrong persisted transaction state after ENOSPC: " + phase);
+          const auto journal_bytes =
+              read_file(state / "journal.json", 1024 * 1024);
+          const auto journal = parse_json(
+              std::string(journal_bytes.begin(), journal_bytes.end()));
+          if (had_old) {
+            const auto backup =
+                state / ("backup-" + journal["id"].get<std::string>());
+            expect((fs::exists(target) && snapshot(target) == old_files) ||
+                       (fs::exists(backup) && snapshot(backup) == old_files),
+                   "Disk-full failure lost original files");
+          }
+          restore_cdm(target);
+          restore_cdm(target);
+          expect(!has_transaction(target),
+                 "Recovery did not finish after freeing space");
+          expect(had_old ? snapshot(target) == old_files : !fs::exists(target),
+                 "Recovery after ENOSPC did not restore original state");
+          const auto id = journal["id"].get<std::string>();
+          const auto staged = state / ("stage-" + id);
+          const auto reverted = state / ("reverted-" + id);
+          const auto preserved = fs::exists(staged) ? staged : reverted;
+          expect(
+              directory_inventory(Directory(preserved)) == journal["new_files"],
+              "Recovery after ENOSPC lost the replacement files");
+        }
+        for (const auto &entry : fs::directory_iterator(state))
+          expect(
+              utf8(entry.path().filename()).find(".tmp-") == std::string::npos,
+              "Disk-full journal left a temporary file");
+        ++scenarios;
+      }
+    }
+  }
+  std::cout << scenarios
+            << " real ENOSPC staging/installation/recovery scenarios passed\n";
+}
+
 void transaction_binding_tests(const fs::path &root) {
   unsigned index = 0;
   for (const bool restoring : {false, true}) {
@@ -218,6 +366,10 @@ void transaction_binding_tests(const fs::path &root) {
 int main(int argc, char **argv) {
   try {
 #ifndef _WIN32
+    if (argc == 3 && std::string(argv[1]) == "--transaction-space") {
+      transaction_space_tests(fs::absolute(from_utf8(argv[2])));
+      return 0;
+    }
     if (argc == 2 && std::string(argv[1]) == "--permission-denied") {
       expect(geteuid() != 0,
              "Permission test must run as an unprivileged user");

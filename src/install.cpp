@@ -225,6 +225,11 @@ void install_cdm(const fs::path &target, const Cdm &cdm,
     specific.create_private(platform_name() + "_x64");
     const auto binaries = specific.child(platform_name() + "_x64");
     data_dir.write("manifest.json", cdm.manifest);
+    if (hooks.phase) hooks.phase("staging");
+    parent.verify_location();
+    state.verify_location();
+    staging->verify_location();
+    check_cancelled();
     binaries.write(binary_name(), cdm.library);
     if (!cdm.license.empty()) data_dir.write("LICENSE", cdm.license);
     require(read_cdm(data_dir).version == cdm.version,

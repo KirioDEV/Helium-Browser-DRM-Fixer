@@ -11,6 +11,9 @@ fi
 cmake -S /source -B /build/gcc -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON -DFIXER_REQUIRE_NETWORK_TESTS=ON
 cmake --build /build/gcc --parallel 4
 ctest --test-dir /build/gcc --output-on-failure
+if [ -n "${FIXER_SPACE_TEST_ROOT:-}" ]; then
+    /build/gcc/fixer_tests --transaction-space "$FIXER_SPACE_TEST_ROOT"
+fi
 if [ -f /source/.deps/widevine-linux.crx3 ]; then
     /build/gcc/fixer_tests --verify-package /source/.deps/widevine-linux.crx3
 fi
@@ -18,6 +21,9 @@ cmake -S /source -B /build/clang -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTI
     -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DFIXER_SANITIZERS=ON -DFIXER_FUZZING=ON
 cmake --build /build/clang --parallel 4
 ctest --test-dir /build/clang --output-on-failure
+if [ -n "${FIXER_SPACE_TEST_ROOT:-}" ]; then
+    /build/clang/fixer_tests --transaction-space "$FIXER_SPACE_TEST_ROOT"
+fi
 mkdir -p /build/fuzz-corpus
 python3 /source/tools/seed_fuzz.py /build/fuzz-corpus
 if ! /build/clang/fixer_fuzz /build/fuzz-corpus -max_total_time="$fuzz_seconds" -timeout=5 -rss_limit_mb=512 \

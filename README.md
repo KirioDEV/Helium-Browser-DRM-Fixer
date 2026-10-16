@@ -154,14 +154,23 @@ Prüfungen; beim normalen lokalen Build werden fehlende Voraussetzungen gemeldet
 
 Die Fehlerfalltests prüfen außerdem Abbruch mit Rollback, manipulierte Backups
 und Journale, Hardlinks sowie unter Windows gesperrte DLLs. Für Linux gibt es
-zwei zusätzliche Testmodi:
+drei zusätzliche Testmodi:
 
 ```sh
 # Als normaler Benutzer, nicht als root:
 ./build/debug/fixer_tests --permission-denied
 # Nur auf einem eigenen Test-Dateisystem mit höchstens 64 KiB freiem Platz:
 ./build/debug/fixer_tests --low-space /pfad/zum/test-dateisystem
+# Nur auf einem leeren, separaten tmpfs (2-16 MiB, empfohlen 8 MiB):
+./build/debug/fixer_tests --transaction-space /pfad/zum/leeren/test-tmpfs
 ```
+
+Die Transaktionstests füllen dieses tmpfs gezielt. Sie prüfen 18 Fälle für
+Erstinstallation, Update und Wiederherstellung einschließlich teilweise
+geschriebener Staging-Dateien und fortsetzbarer Recovery nach Freigabe des
+Speicherplatzes. Die Linux-CI richtet dafür ein eigenes 8-MiB-tmpfs ein.
+Im Docker-Testskript aktiviert `FIXER_SPACE_TEST_ROOT` diese Fälle für beide
+Compiler; der Pfad muss auf ein entsprechend eingebundenes Test-tmpfs zeigen.
 
 Das Docker-Testskript `tools/run_linux_tests.sh` fuzztestet standardmäßig
 60 Sekunden. `FIXER_FUZZ_SECONDS` erlaubt 1 bis 3600 Sekunden; ein längerer
