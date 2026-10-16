@@ -109,6 +109,8 @@ def main():
 
         execute("help", ["--help"], contains=("Usage:",), read_only=True)
         execute("version", ["--version"], read_only=True)
+        execute("release verification helper not shipped", ["--verify-app-package"],
+                2, read_only=True)
         for conflict in (location, ["--check"], ["--dry-run"], ["--restore"],
                          ["--source", "chrome"], ["--force-download"]):
             execute(f"app update conflicts with {conflict[0]}",

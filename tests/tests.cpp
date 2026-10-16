@@ -874,6 +874,29 @@ int main(int argc, char **argv) {
       return 0;
     }
 #endif
+    if (argc == 2 && std::string(argv[1]) == "--app-update-trust") {
+      std::cout << (app_update_key_configured() ? "configured" : "disabled")
+                << '\n';
+      return 0;
+    }
+    if ((argc == 7 && std::string(argv[1]) == "--verify-app-package") ||
+        (argc == 6 &&
+         std::string(argv[1]) == "--verify-app-package-configured")) {
+      const auto manifest = read_file(from_utf8(argv[2]), 65536);
+      const auto signature = read_file(from_utf8(argv[3]), 512);
+      const bool explicit_trust = argc == 7;
+      const auto version = std::string(argv[explicit_trust ? 6 : 5]);
+      const auto parsed =
+          explicit_trust ? verify_app_manifest_with_trusted_key(
+                               manifest, signature,
+                               read_file(from_utf8(argv[4]), 1024), version)
+                         : verify_app_manifest(manifest, signature, version);
+      verify_app_package_digest(
+          parsed, read_file(from_utf8(argv[explicit_trust ? 5 : 4]),
+                            128 * 1024 * 1024));
+      std::cout << "Signed manifest and package digest verified\n";
+      return 0;
+    }
 #ifndef _WIN32
     if (argc == 3 && std::string(argv[1]) == "--transaction-space") {
       transaction_space_tests(fs::absolute(from_utf8(argv[2])));
@@ -1493,6 +1516,9 @@ int main(int argc, char **argv) {
     fs::remove_all(root);
     std::cout << assertions << " assertions passed\n";
     return 0;
+  } catch (const Error &error) {
+    std::cerr << "TEST FAILURE: " << error.what() << '\n';
+    return static_cast<int>(error.code);
   } catch (const std::exception &error) {
     std::cerr << "TEST FAILURE: " << error.what() << '\n';
     return 1;

@@ -223,8 +223,9 @@ hochgeladenes Paket mit passendem Namen, URL und plausibler Größe:
 | Linux x86_64 / Ubuntu 24.04 | `helium-drm-fixer-cpp-VERSION-linux-x86_64-ubuntu24.04.zip` |
 
 Go-Releases oder Releases ohne dieses plattformspezifische Paket werden nicht
-als kompatibles Update angeboten. Die vorhandene CI erzeugt solche Releasepakete
-noch nicht. Eine Versionsabfrage ist **keine Paket- oder Signaturprüfung**.
+als kompatibles Update angeboten. Die CI erzeugt zusätzlich unsignierte ZIP-
+Kandidaten mit Manifest als eigene Artefakte; sie veröffentlicht keine Releases.
+Eine Versionsabfrage ist **keine Paket- oder Signaturprüfung**.
 JSON-Schema 1 liefert `repository`, `installed_version`, `available_version`,
 `release_url`, `package_name`, `exit_code` und einen der Zustände
 `update_available`, `current`, `installed_newer`, `no_public_release` oder
@@ -237,11 +238,62 @@ ungültige Metadaten und Abbruch bleiben Fehler und werden nicht als „aktuell�
 ausgegeben. Fehler vor einem Prüfergebnis nutzen den normalen Fehlerpfad.
 
 `--update-app` und die eigentliche Selbstinstallation sind **noch nicht
-implementiert**. Dafür folgen Releasepakete, signierte Metadaten und ein sicherer
-Austausch mit Rückfallmöglichkeit. Die spätere GUI soll beim Start im Hintergrund prüfen,
+implementiert**. Lokale Paketerzeugung und Signaturprüfung sind vorbereitet;
+Download, sicheres Entpacken und Austausch mit Rückfallmöglichkeit folgen noch.
+Die spätere GUI soll beim Start im Hintergrund prüfen,
 unten rechts ihre App-Version und bei einem Update einen `Aktualisieren`-Knopf
 anzeigen. Installation erfolgt nach einem ausdrücklichen Befehl oder Klick.
 Die vorhandenen CDM-Modi `--check` und `--dry-run` bleiben offline.
+
+Aus einem mit `cmake --install` vorbereiteten Verzeichnis erzeugt das Tool
+`tools/package_app_release.py` die ZIP-Datei und `ZIPNAME.manifest.json`:
+
+```powershell
+New-Item -ItemType Directory -Path build/release-files -Force
+python tools/package_app_release.py --staging build/package --version 0.1.0 --platform windows-x64 --output build/release-files
+```
+
+Unter Linux das Verzeichnis mit `mkdir -p build/release-files` anlegen und
+`--platform linux-x86_64-ubuntu24.04` verwenden. Das Ausgabeverzeichnis
+muss vorhanden, leer für diese Versionsdateien und vom Staging getrennt sein.
+Die Versionsangabe muss zum gebauten Programm passen; das Tool führt keine
+staged Binärdateien aus. Bekannte App-/Laufzeitdateien, README und Projekt-/
+Bibliothekslizenzen werden aufgenommen. Links, Reparse Points, unbekannte Dateien,
+fehlende oder unvollständige Laufzeiten und bestehende Ausgabedateien werden
+abgelehnt. Gleiche Eingaben ergeben mit derselben Toolchain gleiche Paketdateien.
+
+Mit `--signing-key /sicherer/pfad/helium-release.pem` kommt zusätzlich
+`ZIPNAME.manifest.sig` hinzu. Ein verschlüsselter Schlüssel kann über
+`--key-password-env FIXER_RELEASE_KEY_PASSWORD` entsperrt werden; die Variable
+enthält die Passphrase, der Befehl nur deren Namen. Das Tool benötigt OpenSSL,
+optional über `--openssl` angegeben. Für Windows-OpenSSL einen ASCII-Dateinamen
+für den Schlüssel verwenden; sein Verzeichnis darf Unicode-Zeichen enthalten.
+Private Schlüssel müssen außerhalb von Staging und Ausgabe liegen und werden
+nicht in das Paket kopiert. Ohne Schlüssel ist die Ausgabe ausdrücklich ein
+unsignierter Kandidat.
+
+Das Manifest enthält Schema, App-/Repository-Identität, Version, Plattform,
+Paketname/-größe/-SHA-256 und ein Inventar aus Dateipfaden, Größen, Hashes und
+Ausführungskennzeichen. Signiert werden die exakten UTF-8-Bytes einschließlich
+abschließendem Zeilenumbruch, vorangestellt der ASCII-Kontext
+`Helium DRM Fixer app update manifest v1` mit einem NUL-Byte. Das Verfahren ist
+RSA-PKCS#1-v1.5 mit SHA-256, RSA-3072/4096 und Exponent 65537.
+
+Der öffentliche Schlüssel wird als DER-SubjectPublicKeyInfo beim Build über
+`-DFIXER_APP_UPDATE_PUBLIC_KEY=/pfad/zum/public.der` fest eingebaut. Ohne diese
+Konfiguration lehnt die native Manifestprüfung signierte Pakete ab. Es gibt keinen
+voreingestellten Release-Schlüssel und keinen Vertrauenstausch über die
+heruntergeladenen Metadaten. Ein neuer privater Release-Schlüssel wurde bisher
+nicht angelegt. Der öffentliche Teil kann mit
+`openssl pkey -in helium-release.pem -pubout -outform DER -out public.der`
+aus einem später eingerichteten privaten Schlüssel abgeleitet werden.
+
+Die native Schnittstelle prüft Signatur, erwartete Version, Plattform und
+Manifeststruktur; `verify_app_package_digest` prüft anschließend Größe und Hash
+der ZIP-Bytes. Das ist noch keine Prüfung entpackter Dateien und keine Freigabe
+zur Installation. Der Release-Check lädt diese Signaturdateien noch nicht nach;
+seine JSON-Felder `package_verified` und `self_install_supported` bleiben `false`.
+Die CI erhält keinen privaten Schlüssel und erzeugt weiterhin nur Kandidaten.
 
 Der C++-Code verwendet das Google-Format aus der projektweiten
 `.clang-format`. In CLion unter **Settings → Editor → Code Style → C/C++**
@@ -318,7 +370,7 @@ Kernschnittstellen-Test prüft Phasenreihenfolge, Metadaten, Callback-Ausnahmen,
 Abbruch an sechs Installationsgrenzen, kritisches Restore und fehlende direkte
 Konsolenausgabe. Die aktiven API-Aufrufe verwenden ausschließlich synthetische CDMs.
 Ein zusätzlicher
-CTest-Lauf führt 44 Szenarien mit der tatsächlichen Programmdatei aus:
+CTest-Lauf führt 45 Szenarien mit der tatsächlichen Programmdatei aus:
 Installation, Update, Restore, Crash-Recovery, Exitcodes und Unicode-Pfade.
 Er verwendet ausschließlich synthetische PE-/ELF-Header in separaten temporären
 Profilen; die Dateien werden nicht als Bibliotheken geladen. Quell-, Ziel-,
@@ -335,6 +387,13 @@ Installieren, Update, Restore und erneute Auflösung nach einem Versionswechsel.
 Program Files einschließlich `ProgramW6432`, Benutzer- und Cachepfade sind dabei
 auf temporäre Fixtures gesetzt. Unter Linux prüfen fünf Szenarien die
 Optionskonflikte und die Beibehaltung der profilbezogenen Zielauswahl.
+
+Eine siebte CTest-Gruppe prüft 35 Releasefälle mit kurzlebigen Testschlüsseln:
+RSA-3072/4096, falsche/zu schwache/EC-Schlüssel, Signatur-Kontext, manipulierte
+Manifeste und ZIPs, Plattform-/Versionsbindung, Inventar-/Pfadfehler, unveränderte
+Ausgaben bei abgelehnten Aufrufen und verschlüsselte Schlüssel. Die synthetischen
+Releaseprogramme werden nicht ausgeführt. Diese Testschlüssel werden weder im
+normalen Programm verankert noch als Release-Vertrauensanker mitgeliefert.
 
 Für Linux gibt es
 drei zusätzliche Testmodi:

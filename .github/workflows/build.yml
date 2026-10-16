@@ -22,10 +22,21 @@ jobs:
         run: ./tools/test_windows_space.ps1 -TestExecutable ./build/msvc/Release/fixer_tests.exe
       - name: Package
         run: cmake --install build/msvc --config Release --prefix build/package
+      - name: Build unsigned app-update candidate
+        shell: pwsh
+        run: |
+          $releaseVersion = & ./build/msvc/Release/helium_drm_fixer.exe --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Path build/releases | Out-Null
+          python tools/package_app_release.py --staging build/package --version $releaseVersion --platform windows-x64 --output build/releases
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-x64
           path: build/package
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-x64-unsigned-update-candidate
+          path: build/releases
   linux:
     runs-on: ubuntu-24.04
     strategy:
@@ -58,11 +69,23 @@ jobs:
         run: |
           python3 tools/seed_fuzz.py build/corpus
           build/debug/fixer_fuzz build/corpus -max_total_time=60 -timeout=5 -rss_limit_mb=512 -max_len=65536
-      - name: Package GCC build
+      - name: Build and test Release package
         if: matrix.compiler == 'gcc'
-        run: cmake --install build/debug --prefix build/package
+        run: |
+          cmake --preset release -DFIXER_REQUIRE_NETWORK_TESTS=ON
+          cmake --build --preset release --parallel 4
+          ctest --test-dir build/release --output-on-failure
+          cmake --install build/release --prefix build/package
+          mkdir -p build/releases
+          app_version=$(build/release/helium_drm_fixer --version)
+          python3 tools/package_app_release.py --staging build/package --version "$app_version" --platform linux-x86_64-ubuntu24.04 --output build/releases
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: matrix.compiler == 'gcc'
         with:
           name: linux-x86_64-ubuntu24.04
           path: build/package
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: matrix.compiler == 'gcc'
+        with:
+          name: linux-x86_64-unsigned-update-candidate
+          path: build/releases

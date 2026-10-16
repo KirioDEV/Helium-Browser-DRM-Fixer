@@ -32,6 +32,32 @@ struct AppUpdateStatus {
 
 std::string app_package_name(const std::string &version);
 
+struct AppPackageManifest {
+  std::string version;
+  std::string platform;
+  std::string package_name;
+  std::string package_sha256;
+  std::uint64_t package_size = 0;
+  Json files;
+};
+
+// Signatures cover a domain prefix followed by the exact UTF-8 manifest bytes.
+// Explicit trust is for release tooling/tests: never obtain this key from the
+// package or metadata being verified. The application uses its build-time key.
+AppPackageManifest verify_app_manifest_with_trusted_key(
+    std::span<const unsigned char> manifest,
+    std::span<const unsigned char> signature,
+    std::span<const unsigned char> trusted_key,
+    const std::string &expected_version);
+AppPackageManifest verify_app_manifest(std::span<const unsigned char> manifest,
+                                       std::span<const unsigned char> signature,
+                                       const std::string &expected_version);
+bool app_update_key_configured();
+
+// Digest verification does not unpack a ZIP or authorize installation.
+void verify_app_package_digest(const AppPackageManifest &manifest,
+                               std::span<const unsigned char> package);
+
 // Metadata only. No redirects, package download, cache or filesystem writes.
 HttpResponse app_release_request_with_transport(const HttpTransport &transport);
 HttpResponse app_release_request();

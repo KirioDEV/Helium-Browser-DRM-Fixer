@@ -32,8 +32,28 @@ FetchContent_Declare(miniz URL "${MINIZ_URL}"
     URL_HASH SHA256=98468f8924934b723276680f85238b6c78bf1f8b49b4459cc9b7214a20e2e9fb)
 FetchContent_MakeAvailable(json miniz)
 target_compile_definitions(miniz PUBLIC MINIZ_NO_ZLIB_COMPATIBLE_NAMES)
-add_library(fixer_core src/core.cpp src/status.cpp src/operation.cpp src/app_update.cpp src/platform.cpp src/directory.cpp src/network.cpp src/package.cpp src/install.cpp)
+set(FIXER_APP_UPDATE_PUBLIC_KEY "" CACHE FILEPATH "Trusted app-update RSA public key (DER SPKI); empty disables signed app updates")
+set(FIXER_APP_UPDATE_KEY_HEX "")
+if(FIXER_APP_UPDATE_PUBLIC_KEY)
+    file(SIZE "${FIXER_APP_UPDATE_PUBLIC_KEY}" FIXER_APP_UPDATE_KEY_SIZE)
+    if(FIXER_APP_UPDATE_KEY_SIZE EQUAL 422)
+        set(FIXER_APP_UPDATE_KEY_PREFIX "308201a2300d06092a864886f70d01010105000382018f003082018a0282018100")
+    elseif(FIXER_APP_UPDATE_KEY_SIZE EQUAL 550)
+        set(FIXER_APP_UPDATE_KEY_PREFIX "30820222300d06092a864886f70d01010105000382020f003082020a0282020100")
+    else()
+        message(FATAL_ERROR "App update key must be a DER SPKI RSA-3072/4096 public key")
+    endif()
+    file(READ "${FIXER_APP_UPDATE_PUBLIC_KEY}" FIXER_APP_UPDATE_KEY_HEX HEX)
+    if(NOT FIXER_APP_UPDATE_KEY_HEX MATCHES "^${FIXER_APP_UPDATE_KEY_PREFIX}[89abcdef]" OR
+       NOT FIXER_APP_UPDATE_KEY_HEX MATCHES "0203010001$")
+        message(FATAL_ERROR "App update trust input must be a public DER SPKI RSA key, never a private key")
+    endif()
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${FIXER_APP_UPDATE_PUBLIC_KEY}")
+endif()
+configure_file(cmake/app_update_trust.hpp.in generated/app_update_trust.hpp @ONLY)
+add_library(fixer_core src/core.cpp src/status.cpp src/operation.cpp src/app_update.cpp src/app_manifest.cpp src/platform.cpp src/directory.cpp src/network.cpp src/package.cpp src/install.cpp)
 target_include_directories(fixer_core PUBLIC include)
+target_include_directories(fixer_core PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_link_libraries(fixer_core PUBLIC nlohmann_json::nlohmann_json PRIVATE miniz)
 target_compile_definitions(fixer_core PUBLIC FIXER_VERSION="${PROJECT_VERSION}")
 if(WIN32)
@@ -77,6 +97,11 @@ if(BUILD_TESTING)
         find_program(FIXER_OPENSSL_EXECUTABLE NAMES openssl
             HINTS "C:/Program Files/Git/mingw64/bin" "C:/Program Files/Git/usr/bin")
         if(FIXER_OPENSSL_EXECUTABLE)
+            add_test(NAME signed_app_packages COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_SOURCE_DIR}/tests/release_packages.py"
+                --helper "$<TARGET_FILE:fixer_tests>"
+                --openssl "${FIXER_OPENSSL_EXECUTABLE}")
+            set_tests_properties(signed_app_packages PROPERTIES TIMEOUT 180)
             # Compile the native transport separately: fixture routing/trust must
             # never be enabled in fixer_core or the installed executable.
             add_executable(fixer_network_tests tests/network_probe.cpp src/network.cpp)

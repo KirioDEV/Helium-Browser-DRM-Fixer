@@ -1,0 +1,5 @@
+#pragma once
+
+namespace fixer {
+inline constexpr char app_update_trusted_key_hex[] = "@FIXER_APP_UPDATE_KEY_HEX@";
+}  // namespace fixer
