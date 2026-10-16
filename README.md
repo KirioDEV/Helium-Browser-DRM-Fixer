@@ -239,8 +239,8 @@ ausgegeben. Fehler vor einem Prüfergebnis nutzen den normalen Fehlerpfad.
 
 `--update-app` und die eigentliche Selbstinstallation sind **noch nicht
 implementiert**. Lokale Paketerzeugung, Signaturprüfung und geprüftes Entpacken
-im Arbeitsspeicher sind vorbereitet; Download, Schreiben in ein geschütztes
-Staging und Austausch mit Rückfallmöglichkeit folgen noch.
+im Arbeitsspeicher und geschütztes Staging sind vorbereitet; Download und
+Austausch mit Rückfallmöglichkeit folgen noch.
 Die spätere GUI soll beim Start im Hintergrund prüfen,
 unten rechts ihre App-Version und bei einem Update einen `Aktualisieren`-Knopf
 anzeigen. Installation erfolgt nach einem ausdrücklichen Befehl oder Klick.
@@ -299,6 +299,18 @@ abweichende Pfade, CRC-Fehler und falsche Binärformate werden abgelehnt.
 Dateien sind auf 64 MiB, das Paket und die Summe auf je 128 MiB begrenzt.
 Erst nach vollständiger Prüfung werden die Dateiinhalte zurückgegeben.
 Das ist keine Freigabe zur Installation und schreibt keine Dateien.
+`stage_app_package` kann ein so geprüftes Paket anschließend in einem bereits
+vorhandenen privaten Staging-Verzeichnis vorbereiten. Es legt einen neuen,
+zufälligen Unterordner exklusiv an und überschreibt keine bestehenden Dateien.
+Dateien werden geschrieben, synchronisiert und erneut vollständig auf ihr
+Inventar und ihre Hashes geprüft, bevor der Unterordner von `.partial` auf
+`.ready` umbenannt wird. Unter Linux bleiben Verzeichnisse und Programm privat
+mit Modus 0700, andere Dateien mit 0600; unter Windows wird die private ACL
+verwendet. Fehler können isolierte Reste hinterlassen, auch einen bereits
+umbenannten Ordner bei einem anschließenden Synchronisierungsfehler.
+Ein `.ready`-Name erlaubt keine Installation: Signatur und Dateien müssen vor
+einem späteren Austausch erneut geprüft werden. Das laufende Programm wird
+durch diesen Vorbereitungsschritt weder ersetzt noch gestartet.
 Der Release-Check lädt diese Signaturdateien noch nicht nach;
 seine JSON-Felder `package_verified` und `self_install_supported` bleiben `false`.
 Die CI erhält keinen privaten Schlüssel und erzeugt weiterhin nur Kandidaten.
@@ -396,12 +408,19 @@ Program Files einschließlich `ProgramW6432`, Benutzer- und Cachepfade sind dabe
 auf temporäre Fixtures gesetzt. Unter Linux prüfen fünf Szenarien die
 Optionskonflikte und die Beibehaltung der profilbezogenen Zielauswahl.
 
-Eine siebte CTest-Gruppe prüft 53 Releasefälle mit kurzlebigen Testschlüsseln:
+Eine siebte CTest-Gruppe prüft 60 Releasefälle unter Windows beziehungsweise
+61 unter Linux mit kurzlebigen Testschlüsseln:
 RSA-3072/4096, falsche/zu schwache/EC-Schlüssel, Signatur-Kontext, manipulierte
 Manifeste und ZIPs, Plattform-/Versionsbindung, Inventar-/Pfadfehler, unveränderte
 Ausgaben bei abgelehnten Aufrufen und verschlüsselte Schlüssel. Erneut signierte
 ZIPs prüfen außerdem Links, Berechtigungen, fehlende/zusätzliche Dateien,
 CRC-/Dateihashfehler, Binärformate sowie gespeicherte und leere Dateien. Die synthetischen
+Staging-Fälle prüfen zudem private Rechte, getrennte Vorbereitungen, den Erhalt
+bestehender Dateien und Ablehnung von Abbruch, beschädigten Paketen sowie
+fehlenden, relativen, verlinkten oder unter Linux nicht privaten Elternordnern.
+Optional prüft `tests/release_packages.py --staging-space /pfad` auf einem
+separaten begrenzten Linux-Testdateisystem mit weniger als 2 MiB freiem Platz,
+dass ein Schreibfehler keinen `.ready`-Ordner veröffentlicht. Die synthetischen
 Releaseprogramme werden nicht ausgeführt. Diese Testschlüssel werden weder im
 normalen Programm verankert noch als Release-Vertrauensanker mitgeliefert.
 

@@ -45,7 +45,8 @@ void regular(int fd) {
           "Transaction file is not a regular single-link file");
 }
 void put(int directory, const std::string &name,
-         std::span<const unsigned char> data, bool &created) {
+         std::span<const unsigned char> data, bool &created,
+         bool executable = false) {
   File file(openat(directory, name.c_str(),
                    O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600));
   require(file.fd >= 0, "Cannot exclusively create transaction file",
@@ -61,6 +62,9 @@ void put(int directory, const std::string &name,
     require(count > 0, "Transaction write failed", Code::failure);
     position += static_cast<std::size_t>(count);
   }
+  if (executable)
+    require(fchmod(file.fd, 0700) == 0, "Cannot set private executable mode",
+            Code::failure);
   require(fsync(file.fd) == 0, "Cannot flush transaction file", Code::failure);
 }
 #endif
@@ -140,12 +144,15 @@ bool Directory::exists(const std::string &name) const {
   return true;
 #endif
 }
-void Directory::create_private(const std::string &name) const {
+void Directory::create_private(const std::string &name, bool exclusive) const {
   (void)leaf(name);
 #ifdef _WIN32
-  create_private_dir(impl_->path / from_utf8(name));
+  create_private_dir(impl_->path / from_utf8(name), exclusive);
 #else
-  if (!exists(name)) {
+  const bool present = exists(name);
+  require(!exclusive || !present, "Private directory already exists",
+          Code::failure);
+  if (!present) {
     require(mkdirat(impl_->fd, name.c_str(), 0700) == 0,
             "Cannot create private transaction directory", Code::failure);
     sync();
@@ -183,13 +190,15 @@ Bytes Directory::read(const std::string &name, std::size_t limit) const {
 #endif
 }
 void Directory::write(const std::string &name,
-                      std::span<const unsigned char> bytes) const {
+                      std::span<const unsigned char> bytes,
+                      bool executable) const {
   (void)leaf(name);
 #ifdef _WIN32
+  (void)executable;  // Windows access is controlled by the private parent ACL.
   write_file(impl_->path / from_utf8(name), bytes);
 #else
   bool created = false;
-  put(impl_->fd, name, bytes, created);
+  put(impl_->fd, name, bytes, created, executable);
 #endif
 }
 void Directory::write_text(const std::string &name,

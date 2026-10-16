@@ -420,6 +420,10 @@ void directory_tests(const fs::path &root) {
             "Anchored concurrent lock");
   }
   directory.create_private("child");
+  rejects([&] { directory.create_private("child", true); },
+          "Exclusive directory creation reused an existing directory");
+  rejects([&] { directory.write_text("data", "replacement"); },
+          "Exclusive file creation overwrote an existing file");
   rejects([&] { directory.replace("child", "invalid journal"); },
           "Anchored journal cannot replace directory");
   expect(directory.entries().size() == 3,
@@ -879,21 +883,35 @@ int main(int argc, char **argv) {
                 << '\n';
       return 0;
     }
+    if (argc == 3 && std::string(argv[1]) == "--create-private-app-staging") {
+      create_private_dir(from_utf8(argv[2]), true);
+      return 0;
+    }
     if ((argc == 7 && std::string(argv[1]) == "--verify-app-package") ||
+        (argc == 8 &&
+         (std::string(argv[1]) == "--stage-app-package" ||
+          std::string(argv[1]) == "--stage-app-package-cancelled")) ||
         (argc == 6 &&
          std::string(argv[1]) == "--verify-app-package-configured")) {
       const auto manifest = read_file(from_utf8(argv[2]), 65536);
       const auto signature = read_file(from_utf8(argv[3]), 512);
-      const bool explicit_trust = argc == 7;
+      const bool explicit_trust = argc != 6;
       const auto version = std::string(argv[explicit_trust ? 6 : 5]);
       const auto parsed =
           explicit_trust ? verify_app_manifest_with_trusted_key(
                                manifest, signature,
                                read_file(from_utf8(argv[4]), 1024), version)
                          : verify_app_manifest(manifest, signature, version);
-      const auto files = unpack_app_package(
-          parsed, read_file(from_utf8(argv[explicit_trust ? 5 : 4]),
-                            128 * 1024 * 1024));
+      const auto package =
+          read_file(from_utf8(argv[explicit_trust ? 5 : 4]), 128 * 1024 * 1024);
+      if (argc == 8) {
+        cancelled = std::string(argv[1]) == "--stage-app-package-cancelled";
+        std::cout << utf8(
+                         stage_app_package(parsed, package, from_utf8(argv[7])))
+                  << '\n';
+        return 0;
+      }
+      const auto files = unpack_app_package(parsed, package);
       std::cout << "Signed manifest and " << files.size()
                 << " unpacked app files verified\n";
       return 0;

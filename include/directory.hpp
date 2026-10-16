@@ -32,10 +32,10 @@ class Directory {
   explicit Directory(const fs::path &path);
   Directory child(const std::string &name) const;
   bool exists(const std::string &name) const;
-  void create_private(const std::string &name) const;
+  void create_private(const std::string &name, bool exclusive = false) const;
   Bytes read(const std::string &name, std::size_t limit) const;
-  void write(const std::string &name,
-             std::span<const unsigned char> bytes) const;
+  void write(const std::string &name, std::span<const unsigned char> bytes,
+             bool executable = false) const;
   void write_text(const std::string &name, const std::string &text) const;
   void replace(const std::string &name, const std::string &text) const;
   void rename(const std::string &name, const Directory &destination,

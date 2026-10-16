@@ -21,6 +21,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--helper", type=Path, required=True)
     parser.add_argument("--openssl", required=True)
+    parser.add_argument("--staging-space", type=Path,
+                        help="Optional private parent on a bounded filesystem (<2 MiB free)")
     args = parser.parse_args()
     helper = args.helper.resolve()
     passed = 0
@@ -61,6 +63,103 @@ def main():
         paths = build_release(staging, "1.2.3", platform, output, key, args.openssl)
         package, manifest, signature = paths
         original_package, original_manifest, original_signature = (path.read_bytes() for path in paths)
+
+        def stage_case(name, parent, *, accepted=False, cancelled=False):
+            nonlocal passed
+            mode = "--stage-app-package-cancelled" if cancelled else "--stage-app-package"
+            result = subprocess.run([str(helper), mode, str(manifest), str(signature),
+                                     str(public), str(package), "1.2.3", str(parent)],
+                                    capture_output=True, timeout=15)
+            if (result.returncode == 0) != accepted or (cancelled and result.returncode != 130):
+                raise RuntimeError(f"{name}: exit {result.returncode}: {result.stderr!r}")
+            passed += 1
+            print(f"{name}: passed", flush=True)
+            return Path(result.stdout.decode("utf-8").strip()) if accepted else None
+
+        stage_parent = root / "private update staging"
+        command([str(helper), "--create-private-app-staging", str(stage_parent)])
+        sentinel = stage_parent / "existing.txt"
+        sentinel.write_bytes(b"leave existing app/staging files alone")
+        ready = stage_case("private app staging", stage_parent, accepted=True)
+        if ready.parent != stage_parent or not ready.name.endswith(".ready"):
+            raise RuntimeError("Staging was published outside the requested parent")
+        expected_files = json.loads(original_manifest)["files"]
+        actual_files = {path.relative_to(ready).as_posix() for path in ready.rglob("*") if path.is_file()}
+        if actual_files != {file["path"] for file in expected_files}:
+            raise RuntimeError("Staged file inventory differs")
+        for file in expected_files:
+            path = ready / file["path"]
+            if hashlib.sha256(path.read_bytes()).hexdigest() != file["sha256"]:
+                raise RuntimeError("Staged file bytes differ")
+            if not windows and path.stat().st_mode & 0o777 != (0o700 if file["executable"] else 0o600):
+                raise RuntimeError("Staged file is not private or has incorrect executable mode")
+        if not windows:
+            for path in [ready, *(path for path in ready.rglob("*") if path.is_dir())]:
+                if path.stat().st_mode & 0o777 != 0o700:
+                    raise RuntimeError("Staged directory is not private")
+        before = {path.relative_to(stage_parent): path.read_bytes()
+                  for path in stage_parent.rglob("*") if path.is_file()}
+        second_stage = stage_case("independent second app staging", stage_parent, accepted=True)
+        if second_stage == ready or sentinel.read_bytes() != b"leave existing app/staging files alone":
+            raise RuntimeError("Staging reused or changed an existing entry")
+        if any((stage_parent / name).read_bytes() != data for name, data in before.items()):
+            raise RuntimeError("Second staging modified earlier files")
+        before_names = set(stage_parent.iterdir())
+        stage_case("cancelled staging creates nothing", stage_parent, cancelled=True)
+        package.write_bytes(original_package[:-1])
+        stage_case("invalid package creates nothing", stage_parent)
+        package.write_bytes(original_package)
+        if set(stage_parent.iterdir()) != before_names:
+            raise RuntimeError("Cancelled or invalid staging created files")
+        missing_parent = root / "missing staging parent"
+        stage_case("missing staging parent is not created", missing_parent)
+        if missing_parent.exists():
+            raise RuntimeError("Staging created its missing parent")
+        stage_case("relative staging parent rejected", Path("relative-staging"))
+        if not windows:
+            public_parent = root / "public staging parent"
+            public_parent.mkdir(mode=0o755)
+            public_parent.chmod(0o755)
+            stage_case("nonprivate staging parent rejected", public_parent)
+            if list(public_parent.iterdir()):
+                raise RuntimeError("Nonprivate staging parent was modified")
+        stage_link = root / "linked staging parent"
+        if windows:
+            command(["cmd.exe", "/d", "/c", "mklink", "/J", str(stage_link), str(stage_parent)])
+        else:
+            stage_link.symlink_to(stage_parent, target_is_directory=True)
+        try:
+            stage_case("linked staging parent rejected", stage_link)
+        finally:
+            if windows: stage_link.rmdir()
+            else: stage_link.unlink()
+
+        if args.staging_space:
+            if windows:
+                raise RuntimeError("The bounded filesystem probe currently targets Linux")
+            limited = args.staging_space.resolve() / ("stage-probe-" + os.urandom(8).hex())
+            command([str(helper), "--create-private-app-staging", str(limited)])
+            readme = staging / SHARE / "README.md"
+            small_readme = readme.read_bytes()
+            readme.write_bytes(b"x" * (2 * 1024 * 1024))
+            large_output = root / "large output"
+            large_output.mkdir()
+            large_paths = build_release(staging, "1.2.3", platform, large_output, key, args.openssl)
+            readme.write_bytes(small_readme)
+            for destination, candidate in zip(paths, large_paths):
+                destination.write_bytes(candidate.read_bytes())
+            stage_case("full filesystem does not publish staging", limited)
+            children = list(limited.iterdir())
+            if not children or any(not path.name.endswith(".partial") for path in children):
+                raise RuntimeError("Failed write published staging or did not exercise partial writes")
+            # Only this probe's newly created directory is removed; never the
+            # supplied mount/parent or pre-existing data on the test filesystem.
+            import shutil
+            if limited.parent != args.staging_space.resolve() or not limited.name.startswith("stage-probe-"):
+                raise RuntimeError("Refusing cleanup outside this filesystem probe")
+            shutil.rmtree(limited)
+            for destination, data in zip(paths, (original_package, original_manifest, original_signature)):
+                destination.write_bytes(data)
 
         def verify(name, *, trust=public, expected="1.2.3", accepted=True):
             nonlocal passed

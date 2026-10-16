@@ -69,6 +69,17 @@ struct AppPackageFile {
 std::vector<AppPackageFile> unpack_app_package(
     const AppPackageManifest &manifest, std::span<const unsigned char> package);
 
+// Requires a signature-verified manifest and an existing private staging
+// parent. Validates all bytes before creating a new, unique child. The returned
+// directory is published by rename only after durable writes and a full
+// read-back check. Failures may leave an isolated directory (including .ready
+// after a rename sync error). A staging name alone never authorizes
+// installation. The caller must revalidate signed metadata/files before any
+// future installation.
+fs::path stage_app_package(const AppPackageManifest &manifest,
+                           std::span<const unsigned char> package,
+                           const fs::path &parent);
+
 // Metadata only. No redirects, package download, cache or filesystem writes.
 HttpResponse app_release_request_with_transport(const HttpTransport &transport);
 HttpResponse app_release_request();
