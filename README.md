@@ -144,6 +144,13 @@ Für die lokalen HTTPS-Integrationstests werden zusätzlich Python und das
 OpenSSL-Kommando benötigt; unter Windows wird auch Git for Windows als
 Installationsort von OpenSSL berücksichtigt. Die Tests prüfen Zertifikatsfehler,
 Weiterleitungen, Antwortgrößen, abgeschnittene Antworten, Zeitlimits und Abbruch.
+Hinzu kommen kontrolliert eingespeiste DNS-Fehler und Antwortmengen: gemischte
+öffentliche/private Adressen werden vollständig abgelehnt, und jeder Redirect
+wird erneut geprüft. Die nativen Transporte verbinden sich mit einer festgelegten
+IP; TLS-SNI, Zertifikatsprüfung und HTTP-Host behalten den ursprünglichen Hostnamen.
+Die Fixture prüft diese Trennung ausdrücklich auch mit einem nur für die IP
+gültigen Zertifikat. DNS-Antworten sind hierbei simuliert; der System-Resolver
+wird nicht umkonfiguriert.
 Es werden keine Test-Zertifikate in den System-Vertrauensspeicher importiert.
 Die dafür separat gebaute `fixer_network_tests`-Datei wird nicht mit installiert.
 Die normale EXE enthält keine Loopback- oder Test-Zertifikatskonfiguration.

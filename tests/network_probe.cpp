@@ -46,6 +46,10 @@ int main(int argc, char **argv) {
     settings.connect_ms = config.value("connect_ms", 1500L);
     settings.idle_ms = config.value("idle_ms", 1500L);
     settings.low_speed_seconds = config.value("low_speed_seconds", 1L);
+    settings.dns_failure = config.value("dns_failure", false);
+    if (config.contains("dns_answers"))
+      settings.dns_answers =
+          config.at("dns_answers").get<std::vector<std::vector<std::string>>>();
     const auto cancel_after = config.value("cancel_after_ms", -1L);
     std::jthread canceller;
     if (cancel_after >= 0) {

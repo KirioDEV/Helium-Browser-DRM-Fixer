@@ -20,9 +20,13 @@ class Server(http.server.ThreadingHTTPServer):
     def __init__(self, certificate, key):
         super().__init__(("127.0.0.1", 0), Handler)
         self.requests = []
+        self.hosts = []
+        self.server_names = []
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.minimum_version = ssl.TLSVersion.TLSv1_2
         context.load_cert_chain(certificate, key)
+        context.set_servername_callback(
+            lambda _socket, name, _context: self.server_names.append(name))
         self.socket = context.wrap_socket(self.socket, server_side=True)
         self.worker = threading.Thread(target=self.serve_forever, daemon=True)
         self.worker.start()
@@ -47,6 +51,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         self.server.requests.append(self.path)
+        self.server.hosts.append(self.headers.get("Host"))
         self.close_connection = True
         self.rfile.read(int(self.headers.get("Content-Length", "0")))
         self.send_response(302)
@@ -56,6 +61,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         self.server.requests.append(self.path)
+        self.server.hosts.append(self.headers.get("Host"))
         self.close_connection = True
         try:
             if self.path in ("/stall", "/cancel"):
@@ -145,14 +151,17 @@ def main():
                 "-out", "ca.pem", "-addext", "basicConstraints=critical,CA:TRUE")
         openssl("req", "-new", "-newkey", "rsa:2048", "-nodes", "-subj",
                 "/CN=dl.google.com", "-keyout", "leaf.key", "-out", "leaf.csr")
+        openssl("req", "-new", "-key", "leaf.key", "-subj", "/CN=127.0.0.1",
+                "-out", "ip-only.csr")
         for name, san, days in (("valid", "DNS:dl.google.com,DNS:update.googleapis.com,IP:127.0.0.1", "1"),
                                 ("wrong-host", "DNS:wrong.example", "1"),
-                                ("expired", "DNS:dl.google.com,IP:127.0.0.1", "0")):
+                                ("expired", "DNS:dl.google.com,IP:127.0.0.1", "0"),
+                                ("ip-only", "IP:127.0.0.1", "1")):
             (root / "leaf.ext").write_text(
                 "basicConstraints=critical,CA:FALSE\n"
                 "keyUsage=critical,digitalSignature,keyEncipherment\n"
                 f"extendedKeyUsage=serverAuth\nsubjectAltName={san}\n", encoding="ascii")
-            openssl("x509", "-req", "-in", "leaf.csr", "-CA", "ca.pem", "-CAkey",
+            openssl("x509", "-req", "-in", "ip-only.csr" if name == "ip-only" else "leaf.csr", "-CA", "ca.pem", "-CAkey",
                     "ca.key", "-CAcreateserial", "-days", days, "-extfile", "leaf.ext",
                     "-out", f"{name}.pem")
             (root / f"{name}-chain.pem").write_bytes(
@@ -185,6 +194,12 @@ def main():
                     raise RuntimeError(f"{name}: response exceeded timing bound: {response}")
                 if expected_paths is not None and server.requests != expected_paths:
                     raise RuntimeError(f"{name}: unexpected requests: {server.requests}")
+                if expected_paths:
+                    host = "update.googleapis.com" if config.get("update") else "dl.google.com"
+                    if any(value.split(":", 1)[0] != host for value in server.hosts):
+                        raise RuntimeError(f"{name}: IP pinning changed Host: {server.hosts}")
+                    if not server.server_names or any(value != host for value in server.server_names):
+                        raise RuntimeError(f"{name}: IP pinning changed TLS SNI: {server.server_names}")
                 passed += 1
                 print(f"{name}: passed ({response['elapsed_ms']} ms)", flush=True)
             finally:
@@ -195,6 +210,8 @@ def main():
             exercise("fixture peer pin mismatch", "/ok", 4, peer_sha256="0" * 64)
         exercise("untrusted CA", "/ok", 1, trust=False, expected_paths=[])
         exercise("hostname mismatch", "/ok", 1, certificate="wrong-host", expected_paths=[])
+        exercise("pinned IP is not the TLS identity", "/ok", 1,
+                 certificate="ip-only", expected_paths=[])
         exercise("expired certificate", "/ok", 1, certificate="expired", expected_paths=[])
         exercise("unknown-length response", "/unknown", expected_paths=["/unknown"])
         exercise("chunked response", "/chunked", expected_paths=["/chunked"])
@@ -214,6 +231,26 @@ def main():
                  idle_ms=3000)
         exercise("cancellation while stalled", "/cancel", 130, cancel_after_ms=100)
         exercise("cancellation while streaming", "/stream", 130, cancel_after_ms=150)
+        exercise("DNS failure", "/ok", 1, dns_failure=True, expected_paths=[])
+        exercise("empty DNS answer", "/ok", 1, dns_answers=[[]], expected_paths=[])
+        exercise("public IPv4 DNS answer", "/ok", dns_answers=[["8.8.8.8"]],
+                 expected_paths=["/ok"])
+        exercise("public IPv6 DNS answer", "/ok", dns_answers=[["2001:4860:4860::8888"]],
+                 expected_paths=["/ok"])
+        exercise("mixed public DNS answer", "/ok",
+                 dns_answers=[["8.8.8.8", "2001:4860:4860::8888"]], expected_paths=["/ok"])
+        for address in ("127.0.0.1", "10.0.0.1", "169.254.1.1", "100.64.0.1",
+                        "::1", "fc00::1", "fe80::1", "::ffff:127.0.0.1",
+                        "2001:db8::1", "2001::1", "2001:2::1", "2002:7f00:1::1",
+                        "3fff::1", "64:ff9b::7f00:1", "not-an-ip"):
+            exercise(f"reject mixed DNS answer {address}", "/ok", 4,
+                     dns_answers=[["8.8.8.8", address]], expected_paths=[])
+        exercise("reject excessive DNS answers", "/ok", 4,
+                 dns_answers=[["8.8.8.8"] * 65], expected_paths=[])
+        exercise("recheck DNS on redirect", "/redirect", 4,
+                 dns_answers=[["8.8.8.8"], ["127.0.0.1"]], expected_paths=["/redirect"])
+        exercise("recheck DNS on redirect with mixed answer", "/redirect", 4,
+                 dns_answers=[["8.8.8.8"], ["8.8.8.8", "::1"]], expected_paths=["/redirect"])
         print(f"{passed} native HTTPS scenarios and production isolation passed")
 
 

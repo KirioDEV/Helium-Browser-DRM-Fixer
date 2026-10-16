@@ -46,7 +46,13 @@ bool public_ipv6(std::span<const unsigned char> a) {
   // Global unicast only; reject mapped IPv4, ULA, link-local, multicast and
   // documentation space.
   if ((a[0] & 0xe0) != 0x20) return false;
+  // Conservatively exclude IETF special assignments (including transition
+  // mechanisms), 6to4 and both documentation prefixes. Public exceptions in
+  // 2001::/23 are deliberately not needed for the fixed download hosts.
+  if (a[0] == 0x20 && a[1] == 1 && a[2] < 2) return false;
+  if (a[0] == 0x20 && a[1] == 2) return false;
   if (a[0] == 0x20 && a[1] == 1 && a[2] == 0x0d && a[3] == 0xb8) return false;
+  if (a[0] == 0x3f && a[1] == 0xff && (a[2] & 0xf0) == 0) return false;
   return true;
 }
 
@@ -75,6 +81,7 @@ struct RequestContext {
   std::chrono::steady_clock::time_point deadline;
 #ifdef FIXER_NETWORK_TESTING
   const testing::NetworkSettings *fixture = nullptr;
+  mutable std::size_t dns_query = 0;
 #endif
 };
 
@@ -115,7 +122,69 @@ long idle_ms(const RequestContext &context) {
 }
 #endif
 
-std::string resolve_public(const std::string &host) {
+struct IpAddress {
+  int family;
+  std::array<unsigned char, 16> bytes{};
+
+  std::string numeric() const {
+    char buffer[INET6_ADDRSTRLEN]{};
+    require(inet_ntop(family, bytes.data(), buffer, sizeof(buffer)) != nullptr,
+            "Cannot format resolved address", Code::failure);
+    return buffer;
+  }
+
+  bool operator==(const IpAddress &) const = default;
+};
+
+#if !defined(_WIN32) || defined(FIXER_NETWORK_TESTING)
+IpAddress parse_address(const std::string &numeric) {
+  require(!numeric.empty() && numeric.size() < INET6_ADDRSTRLEN &&
+              numeric.find('\0') == std::string::npos,
+          "Invalid numeric DNS address");
+  IpAddress address{AF_INET};
+  if (inet_pton(AF_INET, numeric.c_str(), address.bytes.data()) == 1)
+    return address;
+  address.family = AF_INET6;
+  require(inet_pton(AF_INET6, numeric.c_str(), address.bytes.data()) == 1,
+          "Invalid numeric DNS address");
+  return address;
+}
+#endif
+
+IpAddress socket_address(const sockaddr *raw, std::size_t length) {
+  require(raw && length >= sizeof(raw->sa_family),
+          "Invalid DNS socket address");
+  IpAddress address{raw->sa_family};
+  const unsigned char *bytes = nullptr;
+  std::size_t count = 0;
+  if (raw->sa_family == AF_INET) {
+    require(length >= sizeof(sockaddr_in), "Truncated IPv4 socket address");
+    bytes = reinterpret_cast<const unsigned char *>(
+        &reinterpret_cast<const sockaddr_in *>(raw)->sin_addr);
+    count = 4;
+  } else {
+    require(raw->sa_family == AF_INET6 && length >= sizeof(sockaddr_in6),
+            "Unsupported/truncated DNS socket address");
+    bytes = reinterpret_cast<const unsigned char *>(
+        &reinterpret_cast<const sockaddr_in6 *>(raw)->sin6_addr);
+    count = 16;
+  }
+  std::copy_n(bytes, count, address.bytes.begin());
+  return address;
+}
+
+IpAddress select_public(const std::vector<IpAddress> &addresses) {
+  require(!addresses.empty(), "No usable public address", Code::failure);
+  require(addresses.size() <= 64, "Too many resolved DNS addresses");
+  for (const auto &address : addresses)
+    require(address.family == AF_INET
+                ? public_ipv4({address.bytes.data(), 4})
+                : address.family == AF_INET6 && public_ipv6(address.bytes),
+            "Trusted host resolved to a non-public address");
+  return addresses.front();
+}
+
+IpAddress resolve_public(const std::string &host) {
 #ifdef _WIN32
   static const bool initialized = [] {
     WSADATA data{};
@@ -130,34 +199,39 @@ std::string resolve_public(const std::string &host) {
   require(getaddrinfo(host.c_str(), "443", &hints, &raw) == 0,
           "Cannot resolve trusted host", Code::failure);
   std::unique_ptr<addrinfo, decltype(&freeaddrinfo)> results(raw, freeaddrinfo);
-  std::string selected;
+  std::vector<IpAddress> addresses;
   for (auto item = raw; item; item = item->ai_next) {
-    const void *address = nullptr;
-    std::size_t length = 0;
-    if (item->ai_family == AF_INET) {
-      address = &reinterpret_cast<sockaddr_in *>(item->ai_addr)->sin_addr;
-      length = 4;
-      require(
-          public_ipv4({static_cast<const unsigned char *>(address), length}),
-          "Trusted host resolved to a non-public IPv4 address");
-    } else if (item->ai_family == AF_INET6) {
-      address = &reinterpret_cast<sockaddr_in6 *>(item->ai_addr)->sin6_addr;
-      length = 16;
-      require(
-          public_ipv6({static_cast<const unsigned char *>(address), length}),
-          "Trusted host resolved to a non-public IPv6 address");
-    } else
-      continue;
-    char numeric[INET6_ADDRSTRLEN]{};
-    require(inet_ntop(item->ai_family, address, numeric, sizeof(numeric)) !=
-                nullptr,
-            "Cannot format resolved address", Code::failure);
-    if (selected.empty())
-      selected = item->ai_family == AF_INET6 ? "[" + std::string(numeric) + "]"
-                                             : numeric;
+    require(addresses.size() < 64, "Too many resolved DNS addresses");
+    addresses.push_back(socket_address(item->ai_addr, item->ai_addrlen));
   }
-  require(!selected.empty(), "No usable public address", Code::failure);
-  return selected;
+  return select_public(addresses);
+}
+
+IpAddress connection_address(const Url &url, const RequestContext &context) {
+  (void)remaining_ms(context);
+#ifdef FIXER_NETWORK_TESTING
+  if (context.fixture) {
+    const auto &settings = *context.fixture;
+    require(!settings.dns_failure, "Cannot resolve trusted host",
+            Code::failure);
+    if (settings.dns_answers) {
+      require(context.dns_query < settings.dns_answers->size(),
+              "Fixture DNS answer sequence exhausted", Code::failure);
+      const auto &answers = settings.dns_answers->at(context.dns_query++);
+      require(answers.size() <= 64, "Too many resolved DNS addresses");
+      std::vector<IpAddress> addresses;
+      for (const auto &answer : answers)
+        addresses.push_back(parse_address(answer));
+      (void)select_public(addresses);
+    }
+    // Only the separately compiled test transport maps a validated answer to
+    // its local server. Production always connects to the actual selected IP.
+    return parse_address("127.0.0.1");
+  }
+#endif
+  const auto address = resolve_public(url.host);
+  (void)remaining_ms(context);
+  return address;
 }
 
 using Response = HttpResponse;
@@ -279,13 +353,7 @@ struct AsyncRequest {
 
 Response request_once(const Url &url, const std::string &body,
                       std::size_t limit, const RequestContext &context) {
-  auto connection_host = url.host;
-#ifdef FIXER_NETWORK_TESTING
-  if (context.fixture)
-    connection_host = "127.0.0.1";
-  else
-#endif
-    (void)resolve_public(url.host);
+  const auto selected = connection_address(url, context);
   Internet session(WinHttpOpen(
       L"Helium-DRM-Fixer/" FIXER_VERSION, WINHTTP_ACCESS_TYPE_NO_PROXY,
       WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, WINHTTP_FLAG_ASYNC));
@@ -295,13 +363,19 @@ Response request_once(const Url &url, const std::string &body,
                          static_cast<int>(idle_ms(context)),
                          static_cast<int>(idle_ms(context))) != 0,
       "Cannot set HTTPS timeouts", Code::failure);
-  const auto host = from_utf8(connection_host).native(),
+  const auto host = from_utf8(url.host).native(),
              path = from_utf8(url.path).native();
   Internet connection(
       WinHttpConnect(session.value, host.c_str(), request_port(context), 0));
   AsyncRequest request(WinHttpOpenRequest(
       connection.value, body.empty() ? L"GET" : L"POST", path.c_str(), nullptr,
       WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE));
+  auto resolution = from_utf8(selected.numeric()).native();
+  require(
+      WinHttpSetOption(
+          request.value, WINHTTP_OPTION_RESOLUTION_HOSTNAME, resolution.data(),
+          static_cast<DWORD>(resolution.size() * sizeof(wchar_t))) != 0,
+      "Cannot pin resolved HTTPS address", Code::failure);
   DWORD policy = WINHTTP_OPTION_REDIRECT_POLICY_NEVER;
   require(WinHttpSetOption(request.value, WINHTTP_OPTION_REDIRECT_POLICY,
                            &policy, sizeof(policy)) != 0,
@@ -373,6 +447,9 @@ Response request_once(const Url &url, const std::string &body,
                              &connection_info, &connection_size) != 0,
           "Cannot inspect connected HTTPS peer", Code::failure);
   const auto &remote = connection_info.RemoteAddress;
+  require(socket_address(reinterpret_cast<const sockaddr *>(&remote),
+                         sizeof(remote)) == selected,
+          "Connected HTTPS peer differs from pinned DNS address");
 #ifdef FIXER_NETWORK_TESTING
   if (context.fixture) {
     require(
@@ -483,13 +560,10 @@ Response request_once(const Url &url, const std::string &body,
             "Cannot configure HTTPS client", Code::failure);
   };
   option(CURLOPT_URL, full.c_str());
-  std::string address;
-#ifdef FIXER_NETWORK_TESTING
-  if (context.fixture)
-    address = "127.0.0.1";
-  else
-#endif
-    address = resolve_public(url.host);
+  const auto selected = connection_address(url, context);
+  const auto address = selected.family == AF_INET6
+                           ? "[" + selected.numeric() + "]"
+                           : selected.numeric();
   const auto resolved = url.host + ":" + std::to_string(port) + ":" + address;
   std::unique_ptr<curl_slist, decltype(&curl_slist_free_all)> addresses(
       curl_slist_append(nullptr, resolved.c_str()), curl_slist_free_all);
@@ -586,6 +660,13 @@ Response request_once(const Url &url, const std::string &body,
           std::string("HTTPS request failed: ") + curl_easy_strerror(result),
           Code::failure);
   (void)remaining_ms(context);
+  char *connected = nullptr;
+  require(curl_easy_getinfo(handle.get(), CURLINFO_PRIMARY_IP, &connected) ==
+                  CURLE_OK &&
+              connected,
+          "Cannot inspect connected HTTPS peer", Code::failure);
+  require(parse_address(connected) == selected,
+          "Connected HTTPS peer differs from pinned DNS address");
   long status = 0;
   require(curl_easy_getinfo(handle.get(), CURLINFO_RESPONSE_CODE, &status) ==
               CURLE_OK,

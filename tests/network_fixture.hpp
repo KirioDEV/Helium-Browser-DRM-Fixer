@@ -4,6 +4,8 @@
 #error This header belongs only to the isolated network test executable.
 #endif
 
+#include <optional>
+
 #include "fixer.hpp"
 
 namespace fixer::testing {
@@ -15,6 +17,8 @@ struct NetworkSettings {
   long low_speed_seconds = 1;
   std::string ca_file;
   std::string peer_sha256;
+  bool dns_failure = false;
+  std::optional<std::vector<std::vector<std::string>>> dns_answers;
 };
 
 Bytes network_request(const NetworkSettings &settings, const std::string &url,
