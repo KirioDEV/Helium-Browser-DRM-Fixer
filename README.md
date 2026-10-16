@@ -70,6 +70,11 @@ Für die tatsächliche Installation Helium vollständig schließen und das Progr
 ohne Prüfmodus starten. Der Standard ist `--source google`; bei Fehlern findet
 kein stiller Wechsel auf eine andere Vertrauensquelle statt.
 
+Der Installationslauf meldet Quellenprüfung, Vorbereitung, Erhalt des bisherigen
+Bestands, Installation und lokale Nachprüfung. Bei einer Chrome-Quelle erscheint
+auch ohne `--verbose` der Hinweis, dass ihre Herausgeberintegrität nicht geprüft
+wird. Erfolg wird erst nach der abschließenden lokalen Prüfung gemeldet.
+
 `--helium-path` bezeichnet immer den **exakten WidevineCdm-Ordner**, nicht den
 Helium-Anwendungsordner. Beispiel unter Windows:
 
@@ -160,7 +165,18 @@ wenn diese Testvoraussetzungen fehlen. CI und Docker-Testskript verlangen diese
 Prüfungen; beim normalen lokalen Build werden fehlende Voraussetzungen gemeldet.
 
 Die Fehlerfalltests prüfen außerdem Abbruch mit Rollback, manipulierte Backups
-und Journale, Hardlinks sowie unter Windows gesperrte DLLs. Für Linux gibt es
+und Journale, Hardlinks sowie unter Windows gesperrte DLLs. Ein zusätzlicher
+CTest-Lauf führt 26 Szenarien mit der tatsächlichen Programmdatei aus:
+Installation, Update, Restore, Crash-Recovery, Exitcodes und Unicode-Pfade.
+Er verwendet ausschließlich synthetische PE-/ELF-Header in separaten temporären
+Profilen; die Dateien werden nicht als Bibliotheken geladen. Quell-, Ziel-,
+Home- und Cachepfade sind isoliert. Eine laufende Helium-Instanz blockiert auch
+diesen Test; es gibt keinen Test-Bypass der Prozessprüfung. Dateisystem-Snapshots
+prüfen verbleibende Inhalte und Änderungszeiten der schreibfreien und abgelehnten
+Aufrufe. Sie erfassen keine zwischenzeitlichen Schreib-/Lösch-Systemaufrufe und
+belegen allein keine Netzwerkfreiheit.
+
+Für Linux gibt es
 drei zusätzliche Testmodi:
 
 ```sh

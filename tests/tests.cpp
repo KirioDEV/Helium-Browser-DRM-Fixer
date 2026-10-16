@@ -7,7 +7,11 @@
 #include "directory.hpp"
 #include "fixer.hpp"
 #ifdef _WIN32
+// Windows API headers require this include order.
+// clang-format off
 #include <windows.h>
+#include <shellapi.h>
+// clang-format on
 #else
 #include <fcntl.h>
 #include <linux/magic.h>
@@ -365,6 +369,26 @@ void transaction_binding_tests(const fs::path &root) {
 }  // namespace
 int main(int argc, char **argv) {
   try {
+#ifdef _WIN32
+    int count = 0;
+    struct Arguments {
+      LPWSTR *value;
+      ~Arguments() {
+        if (value) LocalFree(value);
+      }
+    } wide{CommandLineToArgvW(GetCommandLineW(), &count)};
+    require(wide.value && count > 0, "Cannot read test command line",
+            Code::failure);
+    std::vector<std::string> utf8_arguments;
+    for (int i = 0; i < count; ++i)
+      utf8_arguments.push_back(utf8(fs::path(wide.value[i])));
+    std::vector<char *> argument_pointers;
+    for (auto &argument : utf8_arguments)
+      argument_pointers.push_back(argument.data());
+    argument_pointers.push_back(nullptr);
+    argc = count;
+    argv = argument_pointers.data();
+#endif
 #ifndef _WIN32
     if (argc == 3 && std::string(argv[1]) == "--transaction-space") {
       transaction_space_tests(fs::absolute(from_utf8(argv[2])));
