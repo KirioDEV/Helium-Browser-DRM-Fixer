@@ -86,6 +86,32 @@ Linux nutzt `<Profil>/WidevineCdm/<CDM-Version>` und die JSON-Hint-Datei innerha
 des WidevineCdm-Roots. `XDG_CONFIG_HOME` wird berücksichtigt; bei mehreren
 erkannten Profilen ist ein expliziter Zielpfad erforderlich.
 
+Unter Windows kann alternativ `--helium-app-path` einen Helium-Anwendungsordner
+oder einen konkreten Versionsordner bezeichnen:
+
+```powershell
+.\helium_drm_fixer.exe --dry-run --helium-app-path "C:\Users\NAME\AppData\Local\imput\Helium\Application"
+```
+
+Der Anwendungsordner wird bei jedem Aufruf erneut aufgelöst: Die höchste gültige
+vierstellige Versionsnummer wird numerisch gewählt. Ungültige x64-EXE-Header,
+Reparse Points, Hardlinks und numerisch gleichnamige Versionsordner werden
+abgelehnt. Die höchste installierte Version ist kein Nachweis der gerade
+laufenden Browserversion. Helium muss vor einer Installation geschlossen sein.
+
+Die automatische Windows-Erkennung bevorzugt die zwei LocalAppData-Pfade
+`imput/Helium/Application` und `Helium/Application`, danach die
+`Helium/Application`-Ordner unter Program Files und Program Files (x86).
+Bei fehlendem `LOCALAPPDATA` wird das absolute `USERPROFILE/AppData/Local`
+auch für den Cache verwendet. Fremde Benutzerprofile werden nicht durchsucht.
+Die Erkennung erteilt keine Schreibrechte auf systemweite Installationen.
+
+`--helium-app-path` ist Windows-spezifisch und darf weder mit `--helium-path`
+noch mit `--restore` kombiniert werden. Für Restore den **exakten bisherigen
+WidevineCdm-Root** mit `--helium-path` angeben: Nach einem Browserupdate könnte
+der Anwendungsordner bereits auf eine andere Version zeigen. Linux verwendet
+weiterhin den profilbezogenen WidevineCdm-Root.
+
 Weitere Quellen werden ausdrücklich gewählt:
 
 ```sh
@@ -209,6 +235,14 @@ diesen Test; es gibt keinen Test-Bypass der Prozessprüfung. Dateisystem-Snapsho
 prüfen verbleibende Inhalte und Änderungszeiten der schreibfreien und abgelehnten
 Aufrufe. Sie erfassen keine zwischenzeitlichen Schreib-/Lösch-Systemaufrufe und
 belegen allein keine Netzwerkfreiheit.
+
+Eine weitere CTest-Gruppe prüft die Installationserkennung mit 33 Windows-
+Szenarien: numerische Auswahl, Program-Files-/Benutzerpfad-Fallbacks,
+mehrdeutige Versionen, ungültige/gesperrte EXEs, Hardlinks, Junctions sowie
+Installieren, Update, Restore und erneute Auflösung nach einem Versionswechsel.
+Program Files einschließlich `ProgramW6432`, Benutzer- und Cachepfade sind dabei
+auf temporäre Fixtures gesetzt. Unter Linux prüfen fünf Szenarien die
+Optionskonflikte und die Beibehaltung der profilbezogenen Zielauswahl.
 
 Für Linux gibt es
 drei zusätzliche Testmodi:

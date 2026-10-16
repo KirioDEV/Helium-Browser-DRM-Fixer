@@ -125,7 +125,11 @@ Options parse_options(const std::vector<std::string> &args) {
       o.force = true;
     else if (flag == "--helium-path")
       o.target = from_utf8(value());
-    else if (flag == "--chrome-path")
+    else if (flag == "--helium-app-path") {
+      o.helium_app = from_utf8(value());
+      require(!o.helium_app.empty(), "Empty Helium application path",
+              Code::invalid);
+    } else if (flag == "--chrome-path")
       o.chrome = from_utf8(value());
     else if (flag == "--package")
       o.package = from_utf8(value());
@@ -140,6 +144,11 @@ Options parse_options(const std::vector<std::string> &args) {
           "Choose one of --check, --dry-run or --restore", Code::invalid);
   require(o.source == "google" || o.source == "chrome" || o.source == "package",
           "Invalid source", Code::invalid);
+  require(
+      o.helium_app.empty() || (o.target.empty() && !o.restore),
+      "--helium-app-path cannot be combined with --helium-path or --restore; "
+      "restore requires the exact WidevineCdm root",
+      Code::invalid);
   require(o.chrome.empty() || o.source == "chrome",
           "--chrome-path requires --source chrome", Code::invalid);
   require((o.source == "package") == !o.package.empty(),
@@ -162,6 +171,8 @@ std::string help_text() {
          "backup\n"
          "  --helium-path PATH      Exact WidevineCdm root (not Helium "
          "application root)\n"
+         "  --helium-app-path PATH  Windows application/version directory; "
+         "select highest installed version (not for restore)\n"
          "  --source google|chrome|package  Default: google; no silent "
          "fallback\n"
          "  --chrome-path PATH      Source CDM directory; requires --source "
@@ -183,8 +194,12 @@ int run(const Options &o) {
     std::cout << FIXER_VERSION << '\n';
     return 0;
   }
-  auto target = o.target.empty() ? detect_target()
-                                 : fs::absolute(o.target).lexically_normal();
+  require(o.helium_app.empty() || (o.target.empty() && !o.restore),
+          "Application path conflicts with exact target or restore",
+          Code::invalid);
+  auto target = !o.helium_app.empty() ? resolve_helium_app(o.helium_app)
+                : o.target.empty()    ? detect_target()
+                                   : fs::absolute(o.target).lexically_normal();
   require(target.filename() == "WidevineCdm",
           "Target must be the exact WidevineCdm directory", Code::invalid);
   assert_safe_path(target);

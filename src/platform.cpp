@@ -3,6 +3,7 @@
 #include <cstring>
 #include <fstream>
 #include <optional>
+#include <set>
 
 #include "fixer.hpp"
 #ifdef _WIN32
@@ -110,6 +111,19 @@ fs::path env_path(const wchar_t *name) {
   text.resize(length);
   return fs::path(text);
 }
+fs::path local_app_data() {
+  auto local = env_path(L"LOCALAPPDATA");
+  if (local.empty()) {
+    const auto profile = env_path(L"USERPROFILE");
+    if (!profile.empty()) {
+      require(profile.is_absolute(), "USERPROFILE must be absolute");
+      local = profile / "AppData" / "Local";
+    }
+  }
+  require(local.empty() || local.is_absolute(),
+          "LOCALAPPDATA must be absolute");
+  return local;
+}
 #else
 struct Handle {
   int value = -1;
@@ -179,16 +193,19 @@ std::optional<fs::path> latest_version_dir(const fs::path &root) {
   assert_safe_path(root, false);
   std::optional<fs::path> best;
   std::array<std::uint32_t, 4> best_version{};
+  std::set<std::array<std::uint32_t, 4>> versions;
   for (const auto &entry : fs::directory_iterator(root)) {
     if (!entry.is_directory()) continue;
+    std::array<std::uint32_t, 4> version{};
     try {
-      const auto version = version_parts(utf8(entry.path().filename()));
-      if (!best || version > best_version) {
-        best = entry.path();
-        best_version = version;
-      }
+      version = version_parts(utf8(entry.path().filename()));
     } catch (const Error &) {
       continue;
+    }
+    require(versions.insert(version).second, "Ambiguous version directories");
+    if (!best || version > best_version) {
+      best = entry.path();
+      best_version = version;
     }
   }
   return best;
@@ -651,7 +668,7 @@ Lock::~Lock() = default;
 
 fs::path cache_path() {
 #ifdef _WIN32
-  const auto base = env_path(L"LOCALAPPDATA");
+  const auto base = local_app_data();
 #else
   auto base = env_path("XDG_CACHE_HOME");
   if (base.empty()) base = env_path("HOME") / ".cache";
@@ -663,22 +680,56 @@ fs::path cache_path() {
   return base / "helium-drm-fixer";
 }
 
-fs::path detect_target() {
+fs::path resolve_helium_app(const fs::path &path) {
 #ifdef _WIN32
-  const auto local = env_path(L"LOCALAPPDATA");
-  require(!local.empty(), "LOCALAPPDATA is missing", Code::failure);
-  for (const auto &root : {local / "imput" / "Helium" / "Application",
-                           local / "Helium" / "Application"}) {
-    if (auto latest = latest_version_dir(root)) {
-      const auto executable = fs::is_regular_file(root / "helium.exe")
-                                  ? root / "helium.exe"
-                                  : *latest / "helium.exe";
-      require(fs::is_regular_file(executable), "Helium executable not found",
-              Code::missing);
-      validate_binary(read_file(executable, 65536, true), false);
-      return *latest / "WidevineCdm";
+  require(!path.empty(), "Empty Helium application path", Code::invalid);
+  const auto root = fs::absolute(path).lexically_normal();
+  assert_safe_path(root);
+  require(fs::is_directory(root), "Helium application directory not found",
+          Code::missing);
+  auto version = latest_version_dir(root);
+  if (!version) {
+    try {
+      (void)version_parts(utf8(root.filename()));
+      version = root;
+    } catch (const Error &) {
+      throw Error("No valid Helium version directory found", Code::missing);
     }
   }
+  assert_safe_path(*version, false);
+  const auto application = *version == root ? root.parent_path() : root;
+  const auto executable = fs::is_regular_file(*version / "helium.exe")
+                              ? *version / "helium.exe"
+                              : application / "helium.exe";
+  require(fs::is_regular_file(executable), "Helium executable not found",
+          Code::missing);
+  validate_binary(read_file(executable, 65536, true), false);
+  return *version / "WidevineCdm";
+#else
+  (void)path;
+  throw Error(
+      "--helium-app-path is only supported on Windows; use the exact "
+      "profile WidevineCdm root with --helium-path on Linux",
+      Code::invalid);
+#endif
+}
+
+fs::path detect_target() {
+#ifdef _WIN32
+  const auto local = local_app_data();
+  std::vector<fs::path> roots;
+  if (!local.empty()) {
+    roots = {local / "imput" / "Helium" / "Application",
+             local / "Helium" / "Application"};
+  }
+  for (const auto &name : {L"ProgramFiles", L"ProgramFiles(x86)"}) {
+    const auto base = env_path(name);
+    if (base.empty()) continue;
+    require(base.is_absolute(), "Program Files path must be absolute");
+    roots.push_back(base / "Helium" / "Application");
+  }
+  for (const auto &root : roots)
+    if (latest_version_dir(root)) return resolve_helium_app(root);
 #else
   require(env_path("FLATPAK_ID").empty() && env_path("SNAP").empty(),
           "Sandboxed installs are not supported", Code::missing);

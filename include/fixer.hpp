@@ -98,6 +98,8 @@ fs::path cache_path();
 
 fs::path detect_target();
 
+fs::path resolve_helium_app(const fs::path &path);
+
 fs::path detect_chrome();
 
 class Lock {
@@ -119,7 +121,7 @@ struct Options {
        restore = false;
   bool help = false, version = false;
   std::string source = "google";
-  fs::path target, chrome, package;
+  fs::path target, helium_app, chrome, package;
 };
 
 Options parse_options(const std::vector<std::string> &arguments);

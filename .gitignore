@@ -9,8 +9,10 @@
 __pycache__/
 *.pyc
 /Helium-Browser-DRM-Fixer/
+/Helium-Browser-DRM-Fixer-main-new
 /.codex/
 SECURITY.md
 THIRD_PARTY.md
 plan.md
 AGENTS.md
+/docs
