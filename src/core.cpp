@@ -3,6 +3,7 @@
 #include <iostream>
 #include <set>
 
+#include "app_update.hpp"
 #include "fixer.hpp"
 
 namespace fixer {
@@ -115,6 +116,8 @@ Options parse_options(const std::vector<std::string> &args) {
       o.version = true;
     else if (flag == "--check")
       o.check = true;
+    else if (flag == "--check-app-update")
+      o.check_app_update = true;
     else if (flag == "--json")
       o.json = true;
     else if (flag == "--dry-run")
@@ -145,13 +148,20 @@ Options parse_options(const std::vector<std::string> &args) {
 }
 
 void validate_options(const Options &o) {
+  require(!o.check_app_update ||
+              (!o.check && !o.dry_run && !o.restore && !o.force &&
+               o.target.empty() && o.helium_app.empty() && o.chrome.empty() &&
+               o.package.empty() && o.source == "google"),
+          "--check-app-update cannot be combined with CDM options",
+          Code::invalid);
   require(static_cast<int>(o.check) + static_cast<int>(o.dry_run) +
                   static_cast<int>(o.restore) <=
               1,
           "Choose one of --check, --dry-run or --restore", Code::invalid);
   require(o.source == "google" || o.source == "chrome" || o.source == "package",
           "Invalid source", Code::invalid);
-  require(!o.json || o.check, "--json requires --check", Code::invalid);
+  require(!o.json || o.check || o.check_app_update,
+          "--json requires --check or --check-app-update", Code::invalid);
   require(
       o.helium_app.empty() || (o.target.empty() && !o.restore),
       "--helium-app-path cannot be combined with --helium-path or --restore; "
@@ -172,8 +182,9 @@ std::string help_text() {
          " (Windows 11 / Linux x86_64)\n"
          "Usage: helium_drm_fixer [options]\n"
          "  --check                 Inspect local CDM; no network or writes\n"
-         "  --json                  Machine-readable local status; requires "
-         "--check\n"
+         "  --check-app-update      Online app release check; no installation\n"
+         "  --json                  JSON result for --check or "
+         "--check-app-update\n"
          "  --dry-run               Show planned actions; no network or "
          "writes\n"
          "  --restore               Recover an interrupted install or restore "
@@ -218,7 +229,41 @@ int run(const Options &o) {
     std::cout << FIXER_VERSION << '\n';
     return 0;
   }
-  require(!o.json || o.check, "--json requires --check", Code::invalid);
+  if (o.check_app_update) {
+    const auto status = check_app_update();
+    if (o.json)
+      std::cout << app_update_json(status).dump() << '\n';
+    else {
+      std::cout << "Installed app version: " << status.installed_version
+                << '\n';
+      switch (status.state) {
+        case AppUpdateState::update_available:
+          std::cout
+              << "New app release: " << status.available_version << '\n'
+              << status.release_url << '\n'
+              << "Release metadata only; package integrity is not verified. "
+                 "Self-installation is not implemented yet.\n";
+          break;
+        case AppUpdateState::current:
+          std::cout
+              << "Installed app version matches the latest stable release.\n";
+          break;
+        case AppUpdateState::installed_newer:
+          std::cout << "Installed app version is newer than the latest stable "
+                       "release; no downgrade.\n";
+          break;
+        case AppUpdateState::no_public_release:
+          std::cout << "No public stable app release accessible (HTTP 404); "
+                       "the repository may also be unavailable.\n";
+          break;
+        case AppUpdateState::no_compatible_package:
+          std::cout << "Release " << status.available_version
+                    << " has no matching C++ app package for this platform.\n";
+          break;
+      }
+    }
+    return status.exit_code;
+  }
   if (o.check) {
     const auto status = inspect_local(o);
     if (o.json) {

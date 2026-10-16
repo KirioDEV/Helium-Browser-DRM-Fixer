@@ -5,6 +5,7 @@
 #include <map>
 #include <sstream>
 
+#include "app_update.hpp"
 #include "directory.hpp"
 #include "fixer.hpp"
 #ifdef _WIN32
@@ -103,6 +104,132 @@ Json snapshot(const fs::path &root) {
       out[utf8(entry.path().lexically_relative(root))] = "directory";
   }
   return out;
+}
+
+void app_update_tests() {
+  expect(app_version_parts("1.10.0") > app_version_parts("1.9.9"),
+         "App versions were compared lexically");
+  for (const auto &version :
+       {"", "1.2", "1.2.3.4", "01.2.3", "1.2.03", "v1.2.3", "1.2.3-beta",
+        "1.2.3+build", "1.-2.3", "4294967296.0.0", "1.2.3/other"})
+    rejects([&] { (void)app_version_parts(version); }, "Invalid app version");
+  const auto tag = std::string("v1.10.0");
+  const auto release_url = "https://github.com/" +
+                           std::string(app_update_repository) +
+                           "/releases/tag/" + tag;
+  const auto package = app_package_name("1.10.0");
+  Json metadata{
+      {"tag_name", tag},
+      {"draft", false},
+      {"prerelease", false},
+      {"html_url", release_url},
+      {"assets",
+       Json::array(
+           {Json{{"name", package},
+                 {"state", "uploaded"},
+                 {"size", 123u},
+                 {"browser_download_url",
+                  "https://github.com/" + std::string(app_update_repository) +
+                      "/releases/download/" + tag + "/" + package}}})}};
+  auto response = [](const Json &value) {
+    const auto encoded = value.dump();
+    return HttpResponse{200, Bytes(encoded.begin(), encoded.end()), {}};
+  };
+  const auto available = parse_app_update(response(metadata), "1.2.3");
+  expect(available.state == AppUpdateState::update_available &&
+             available.available_version == "1.10.0" &&
+             available.exit_code == 0 && available.package_name == package &&
+             available.release_url == release_url,
+         "Compatible app update was not detected");
+  const auto encoded = app_update_json(available);
+  expect(encoded["package_verified"] == false &&
+             encoded["self_install_supported"] == false &&
+             encoded["repository"] == app_update_repository,
+         "Metadata check claimed package verification or installation");
+  expect(parse_app_update(response(metadata), "1.10.0").state ==
+             AppUpdateState::current,
+         "Equal app release was offered as update");
+  expect(parse_app_update(response(metadata), "2.0.0").state ==
+             AppUpdateState::installed_newer,
+         "Old app release was offered as downgrade");
+  auto no_package = metadata;
+  no_package["assets"][0]["name"] = "helium-drm-fixer-old-go.exe";
+  const auto incompatible = parse_app_update(response(no_package), "1.0.0");
+  expect(incompatible.state == AppUpdateState::no_compatible_package &&
+             incompatible.exit_code == 3 && incompatible.package_name.empty(),
+         "Go release or wrong platform was offered as C++ update");
+  const auto absent = parse_app_update({404, {}, {}}, "1.0.0");
+  expect(absent.state == AppUpdateState::no_public_release &&
+             absent.exit_code == 3 &&
+             app_update_json(absent)["available_version"].is_null(),
+         "HTTP 404 was reported as an up-to-date app");
+  for (unsigned change = 0; change < 12; ++change) {
+    auto bad = metadata;
+    if (change == 0) bad["draft"] = true;
+    if (change == 1) bad["prerelease"] = true;
+    if (change == 2) bad["tag_name"] = "v1.10.0-beta";
+    if (change == 3)
+      bad["html_url"] = "https://github.com/another/repo/releases/tag/v1.10.0";
+    if (change == 4) bad["assets"].push_back(bad["assets"][0]);
+    if (change == 5)
+      bad["assets"][0]["browser_download_url"] =
+          "https://evil.example/update.zip";
+    if (change == 6) bad["assets"][0]["size"] = 0;
+    if (change == 7) bad["assets"][0]["size"] = -1;
+    if (change == 8) bad["assets"][0]["size"] = 128u * 1024 * 1024 + 1;
+    if (change == 9) bad["assets"][0]["state"] = "open";
+    if (change == 10) bad["draft"] = 0;
+    if (change == 11) bad.erase("tag_name");
+    rejects([&] { (void)parse_app_update(response(bad), "1.0.0"); },
+            "Untrusted/malformed app release metadata");
+  }
+  int requests = 0;
+  const auto fetched = app_release_request_with_transport(
+      [&](const Url &url, const std::string &body, std::size_t limit) {
+        ++requests;
+        expect("https://" + url.host + url.path == app_update_api &&
+                   body.empty() && limit == 1024 * 1024,
+               "App update request escaped fixed endpoint");
+        return response(metadata);
+      });
+  expect(requests == 1 && fetched.status == 200,
+         "App checker made multiple requests");
+  for (const auto code : {301u, 302u, 307u, 403u, 429u, 500u})
+    rejects(
+        [&] {
+          (void)app_release_request_with_transport(
+              [&](const Url &, const std::string &, std::size_t) {
+                return HttpResponse{code, {}, "https://api.github.com/other"};
+              });
+        },
+        "App update followed a redirect or ignored an HTTP error");
+  rejects(
+      [&] {
+        (void)app_release_request_with_transport(
+            [](const Url &, const std::string &, std::size_t) {
+              return HttpResponse{200, Bytes(1024 * 1024 + 1, 'x'), {}};
+            });
+      },
+      "Unbounded app metadata response");
+  rejects([] { (void)validate_url(app_update_api); },
+          "GitHub added to CDM policy");
+  rejects([] { (void)validate_url(app_update_api, true); },
+          "GitHub added to Google policy");
+  cancelled.store(true);
+  bool stopped = false;
+  try {
+    (void)app_release_request_with_transport(
+        [&](const Url &, const std::string &, std::size_t) {
+          ++requests;
+          return response(metadata);
+        });
+  } catch (const Error &error) {
+    stopped = error.code == Code::cancelled;
+  }
+  cancelled.store(false);
+  expect(stopped && requests == 1, "Cancelled app checker started a request");
+  expect(parse_options({"--check-app-update", "--json"}).check_app_update,
+         "App update mode or JSON option missing");
 }
 
 void operation_progress_tests(const fs::path &root) {
@@ -248,12 +375,13 @@ void operation_progress_tests(const fs::path &root) {
   cancelled.store(false);
   expect(queried && stopped && snapshot(root) == before,
          "Google acquisition did not cancel before querying or caching");
-  for (unsigned mode = 0; mode < 4; ++mode) {
+  for (unsigned mode = 0; mode < 5; ++mode) {
     auto bad = options;
     if (mode == 0) bad.check = true;
     if (mode == 1) bad.dry_run = true;
     if (mode == 2) bad.source = "unknown";
     if (mode == 3) bad.force = true;
+    if (mode == 4) bad.check_app_update = true;
     bool correct_code = false, emitted = false;
     try {
       (void)execute_operation(bad,
@@ -855,6 +983,7 @@ int main(int argc, char **argv) {
                 << cdm.version << '\n';
       return 0;
     }
+    app_update_tests();
     expect(version_parts("2.0.0.0") > version_parts("1.99.0.0"),
            "Numeric version order");
     for (const auto &v : {"", "1.2.3", "1.2.3.4.5", "../x", "1.-2.3.4",

@@ -8,6 +8,7 @@
 #include <set>
 #include <thread>
 
+#include "app_update.hpp"
 #include "fixer.hpp"
 #ifdef FIXER_NETWORK_TESTING
 #include "network_fixture.hpp"
@@ -817,6 +818,32 @@ Bytes request_with_transport(const std::string &initial,
   throw Error("Too many HTTP redirects", Code::security);
 }
 
+HttpResponse app_release_request_with_transport(
+    const HttpTransport &transport) {
+  check_cancelled();
+  // This fixed, separate policy cannot grant GitHub access to CDM requests.
+  const Url url{"api.github.com",
+                "/repos/KirioDEV/Helium-Browser-DRM-Fixer/releases/latest"};
+  auto response = transport(url, "", 1024 * 1024);
+  check_cancelled();
+  require(response.bytes.size() <= 1024 * 1024,
+          "App release metadata too large");
+  require(response.status == 200 || response.status == 404,
+          "App update HTTP status " + std::to_string(response.status),
+          response.status >= 300 && response.status < 400 ? Code::security
+                                                          : Code::failure);
+  return response;
+}
+
+HttpResponse app_release_request() {
+  const RequestContext context{std::chrono::steady_clock::now() +
+                               std::chrono::seconds(15)};
+  return app_release_request_with_transport(
+      [&](const Url &url, const std::string &body, std::size_t limit) {
+        return request_once(url, body, limit, context);
+      });
+}
+
 Bytes http_request(const std::string &url, const std::string &body,
                    std::size_t limit, bool update) {
   const RequestContext context{std::chrono::steady_clock::now() +
@@ -845,6 +872,16 @@ Bytes testing::network_request(const NetworkSettings &settings,
   const RequestContext context{std::chrono::steady_clock::now() +
                                    std::chrono::milliseconds(settings.total_ms),
                                &settings};
+  if (settings.app_release) {
+    require(url == app_update_api && body.empty() && !update,
+            "Invalid app release fixture request");
+    return app_release_request_with_transport([&](const Url &parsed,
+                                                  const std::string &payload,
+                                                  std::size_t maximum) {
+             return request_once(parsed, payload, maximum, context);
+           })
+        .bytes;
+  }
   return request_with_transport(
       url, body, limit, update,
       [&](const Url &parsed, const std::string &payload, std::size_t maximum) {

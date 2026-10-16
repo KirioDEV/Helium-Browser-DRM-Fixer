@@ -21,6 +21,7 @@ struct NetworkSettings {
   std::string peer_sha256;
   bool dns_failure = false;
   bool system_dns = false;
+  bool app_release = false;
   std::optional<std::vector<std::vector<std::string>>> dns_answers;
 };
 

@@ -109,6 +109,10 @@ def main():
 
         execute("help", ["--help"], contains=("Usage:",), read_only=True)
         execute("version", ["--version"], read_only=True)
+        for conflict in (location, ["--check"], ["--dry-run"], ["--restore"],
+                         ["--source", "chrome"], ["--force-download"]):
+            execute(f"app update conflicts with {conflict[0]}",
+                    ["--check-app-update", *conflict], 2, read_only=True)
         execute("missing installation", [*location, "--check"], 3,
                 contains=("Widevine is missing",), read_only=True)
         status("JSON missing installation", location, "missing", 3)

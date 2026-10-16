@@ -88,6 +88,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.send_header("Content-Length", "0")
                 self.end_headers()
                 return
+            if self.path == "/repos/KirioDEV/Helium-Browser-DRM-Fixer/releases/latest":
+                status = getattr(self.server, "release_status", 200)
+                if status != 200:
+                    self.send_response(status)
+                    self.send_header("Location", "https://evil.example/forbidden")
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
             self.send_response(200)
             if self.path == "/declared-oversized":
                 self.send_header("Content-Length", "65536")
@@ -153,7 +161,7 @@ def main():
                 "/CN=dl.google.com", "-keyout", "leaf.key", "-out", "leaf.csr")
         openssl("req", "-new", "-key", "leaf.key", "-subj", "/CN=127.0.0.1",
                 "-out", "ip-only.csr")
-        for name, san, days in (("valid", "DNS:dl.google.com,DNS:update.googleapis.com,IP:127.0.0.1", "1"),
+        for name, san, days in (("valid", "DNS:dl.google.com,DNS:update.googleapis.com,DNS:api.github.com,IP:127.0.0.1", "1"),
                                 ("wrong-host", "DNS:wrong.example", "1"),
                                 ("expired", "DNS:dl.google.com,IP:127.0.0.1", "0"),
                                 ("ip-only", "IP:127.0.0.1", "1")):
@@ -170,9 +178,10 @@ def main():
         passed = 0
 
         def exercise(name, path, expected_code=0, *, certificate="valid", trust=True,
-                     expected_paths=None, maximum_ms=4000, **options):
+                     expected_paths=None, maximum_ms=4000, release_status=200, **options):
             nonlocal passed
             server = Server(root / f"{certificate}-chain.pem", root / "leaf.key")
+            server.release_status = release_status
             try:
                 peer = hashlib.sha256(ssl.PEM_cert_to_DER_cert(
                     (root / f"{certificate}.pem").read_text(encoding="ascii"))).hexdigest()
@@ -196,7 +205,8 @@ def main():
                 if expected_paths is not None and server.requests != expected_paths:
                     raise RuntimeError(f"{name}: unexpected requests: {server.requests}")
                 if expected_paths:
-                    host = "update.googleapis.com" if config.get("update") else "dl.google.com"
+                    host = ("api.github.com" if config.get("app_release") else
+                            "update.googleapis.com" if config.get("update") else "dl.google.com")
                     if any(value.split(":", 1)[0] != host for value in server.hosts):
                         raise RuntimeError(f"{name}: IP pinning changed Host: {server.hosts}")
                     if not server.server_names or any(value != host for value in server.server_names):
@@ -207,6 +217,22 @@ def main():
                 server.close()
 
         exercise("trusted fixture", "/ok", expected_paths=["/ok"])
+        app_path = "/repos/KirioDEV/Helium-Browser-DRM-Fixer/releases/latest"
+        app_options = {"app_release": True, "url": f"https://api.github.com{app_path}"}
+        exercise("app release HTTPS and pinned Host/SNI", app_path,
+                 expected_paths=[app_path], **app_options)
+        exercise("app release cannot redirect", app_path, 4, release_status=302,
+                 expected_paths=[app_path], **app_options)
+        exercise("app release rate limit", app_path, 1, release_status=403,
+                 expected_paths=[app_path], **app_options)
+        exercise("app release CA validation", app_path, 1, trust=False,
+                 expected_paths=[], **app_options)
+        exercise("app release hostname validation", app_path, 1,
+                 certificate="wrong-host", expected_paths=[], **app_options)
+        exercise("app release rejects private DNS", app_path, 4,
+                 dns_answers=[["127.0.0.1"]], expected_paths=[], **app_options)
+        exercise("CDM policy still rejects GitHub", app_path, 4,
+                 url=f"https://api.github.com{app_path}", expected_paths=[])
         if sys.platform == "win32":
             exercise("fixture peer pin mismatch", "/ok", 4, peer_sha256="0" * 64)
         exercise("untrusted CA", "/ok", 1, trust=False, expected_paths=[])

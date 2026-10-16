@@ -121,6 +121,7 @@ struct Options {
        restore = false;
   bool help = false, version = false;
   bool json = false;
+  bool check_app_update = false;
   std::string source = "google";
   fs::path target, helium_app, chrome, package;
 };

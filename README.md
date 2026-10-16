@@ -70,8 +70,9 @@ noch funktionierendes Streaming.
 `--verbose`. Die Zustände unterscheiden fehlendes, lokal ungültiges und lokal
 plausibles Widevine, offene Recovery sowie eine nicht mögliche Prüfung.
 Lesefehler und beschädigte Verwaltungsjournale sind keine automatische
-Reparaturempfehlung. Die Exitcodes bleiben erhalten; `--json` ist ausschließlich
-mit `--check` zulässig. Lesefehler verwenden den Betriebsfehler-Code 1 und werden
+Reparaturempfehlung. Die Exitcodes bleiben erhalten; `--json` unterstützt den
+lokalen `--check` und den separaten Online-Befehl `--check-app-update`.
+Lesefehler verwenden den Betriebsfehler-Code 1 und werden
 nicht mehr pauschal als ungültiger CDM-Inhalt mit Code 4 ausgegeben.
 
 JSON-Schema 1 enthält `state` (`missing`, `locally_invalid`, `locally_valid`,
@@ -193,6 +194,55 @@ Exitcodes: 0 Erfolg/lokal plausibel, 1 Betriebsfehler, 2 ungültige Optionen,
 
 ## Prüfung und Auslieferung
 
+Die Fixer-App kann veröffentlichte Versionen ihres eigenen Forks prüfen:
+
+```sh
+helium_drm_fixer --check-app-update
+helium_drm_fixer --check-app-update --json
+```
+
+Die feste Quelle ist
+[`KirioDEV/Helium-Browser-DRM-Fixer`](https://github.com/KirioDEV/Helium-Browser-DRM-Fixer).
+Dieser Befehl fragt ausschließlich Release-Metadaten ab, benötigt kein Helium
+und erzeugt weder einen Paketdownload noch einen App-Cache. Die Anfrage hat ein
+Gesamtzeitlimit von 15 Sekunden und folgt keinen Weiterleitungen. TLS-, DNS-
+und IP-Prüfungen werden mit den bestehenden nativen Transporten ausgeführt;
+GitHub wird dadurch nicht als Widevine-Quelle zugelassen. Der Online-Befehl
+ist mit CDM-Ziel-, Installations-, Prüf- und Restore-Optionen nicht kombinierbar.
+
+App-Versionen verwenden drei kanonische numerische Komponenten (`1.10.0`),
+Release-Tags optional ein vorangestelltes `v`. Entwürfe, Vorabversionen und
+mehrdeutige/ungültige Versionsangaben werden abgelehnt. Vierstellige
+Widevine-Versionen verwenden weiterhin ihre eigene Prüfung.
+Ein neueres Release benötigt für den Zustand `update_available` ein fertig
+hochgeladenes Paket mit passendem Namen, URL und plausibler Größe:
+
+| Plattform | Vorgesehenes C++-Releasepaket |
+| --- | --- |
+| Windows 11 x64 | `helium-drm-fixer-cpp-VERSION-windows-x64.zip` |
+| Linux x86_64 / Ubuntu 24.04 | `helium-drm-fixer-cpp-VERSION-linux-x86_64-ubuntu24.04.zip` |
+
+Go-Releases oder Releases ohne dieses plattformspezifische Paket werden nicht
+als kompatibles Update angeboten. Die vorhandene CI erzeugt solche Releasepakete
+noch nicht. Eine Versionsabfrage ist **keine Paket- oder Signaturprüfung**.
+JSON-Schema 1 liefert `repository`, `installed_version`, `available_version`,
+`release_url`, `package_name`, `exit_code` und einen der Zustände
+`update_available`, `current`, `installed_newer`, `no_public_release` oder
+`no_compatible_package`. `package_verified` und `self_install_supported` sind
+derzeit immer `false`. Nicht vorhandene Angaben sind `null`.
+Kein öffentlich zugängliches Release (HTTP 404, möglicherweise auch ein
+nicht zugängliches Repository) und kein kompatibles Paket verwenden Exitcode 3;
+eine erfolgreich festgestellte Version Exitcode 0. Netzwerk-/HTTP-Fehler,
+ungültige Metadaten und Abbruch bleiben Fehler und werden nicht als „aktuell“
+ausgegeben. Fehler vor einem Prüfergebnis nutzen den normalen Fehlerpfad.
+
+`--update-app` und die eigentliche Selbstinstallation sind **noch nicht
+implementiert**. Dafür folgen Releasepakete, signierte Metadaten und ein sicherer
+Austausch mit Rückfallmöglichkeit. Die spätere GUI soll beim Start im Hintergrund prüfen,
+unten rechts ihre App-Version und bei einem Update einen `Aktualisieren`-Knopf
+anzeigen. Installation erfolgt nach einem ausdrücklichen Befehl oder Klick.
+Die vorhandenen CDM-Modi `--check` und `--dry-run` bleiben offline.
+
 Der C++-Code verwendet das Google-Format aus der projektweiten
 `.clang-format`. In CLion unter **Settings → Editor → Code Style → C/C++**
 die Unterstützung für ClangFormat aktivieren. Zum Formatieren und Prüfen
@@ -268,7 +318,7 @@ Kernschnittstellen-Test prüft Phasenreihenfolge, Metadaten, Callback-Ausnahmen,
 Abbruch an sechs Installationsgrenzen, kritisches Restore und fehlende direkte
 Konsolenausgabe. Die aktiven API-Aufrufe verwenden ausschließlich synthetische CDMs.
 Ein zusätzlicher
-CTest-Lauf führt 38 Szenarien mit der tatsächlichen Programmdatei aus:
+CTest-Lauf führt 44 Szenarien mit der tatsächlichen Programmdatei aus:
 Installation, Update, Restore, Crash-Recovery, Exitcodes und Unicode-Pfade.
 Er verwendet ausschließlich synthetische PE-/ELF-Header in separaten temporären
 Profilen; die Dateien werden nicht als Bibliotheken geladen. Quell-, Ziel-,
