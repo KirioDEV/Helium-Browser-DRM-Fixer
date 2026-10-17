@@ -137,6 +137,28 @@ void install_prepared_app_update_with_trusted_key(
 // overwritten or deleted. May also explicitly roll back a committed update.
 void restore_app_update(const fs::path &target, const InstallHooks &hooks = {});
 
+// Native current image path, independent of argv[0] and the working directory.
+fs::path app_executable_path();
+bool app_self_update_supported();
+fs::path app_update_jobs(const fs::path &target);
+// Launches a private copy of the CURRENT application, never the new payload.
+// Returns only after the helper has pinned this process and a durable launch
+// decision was recorded. The caller must then exit; success means scheduled,
+// not installed.
+fs::path start_app_update(const fs::path &directory, const std::string &version,
+                          const std::string &expected_self_sha256);
+fs::path start_app_update_with_trusted_key(
+    const fs::path &directory, const std::string &version,
+    const std::string &expected_self_sha256,
+    std::span<const unsigned char> trusted_key);
+fs::path start_app_restore(const fs::path &target);
+// Internal entry point: fixed build-time trust only in the shipped CLI.
+int run_app_update_helper(const fs::path &request);
+int run_app_update_helper_with_trusted_key(
+    const fs::path &request, std::span<const unsigned char> trusted_key);
+// Read-only status, including errors from the asynchronous helper.
+Json app_update_job_status(const fs::path &job);
+
 AppUpdateDownload parse_app_update_download(
     const HttpResponse &response, const std::string &installed_version);
 // Separate from the Google/CDM URL policy. Exactly one redirect to GitHub's

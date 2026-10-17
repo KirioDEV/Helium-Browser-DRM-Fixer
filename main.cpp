@@ -1,6 +1,7 @@
 #include <csignal>
 #include <iostream>
 
+#include "app_update.hpp"
 #include "fixer.hpp"
 #ifdef _WIN32
 // Windows API headers require this include order.
@@ -32,6 +33,8 @@ int main(int argc, char **argv) {
 #else
     for (int i = 1; i < argc; ++i) arguments.emplace_back(argv[i]);
 #endif
+    if (arguments.size() == 2 && arguments[0] == "--internal-app-update")
+      return fixer::run_app_update_helper(fixer::from_utf8(arguments[1]));
     return fixer::run(fixer::parse_options(arguments));
   } catch (const fixer::Error &error) {
     std::cerr << "Error: " << error.what() << '\n';

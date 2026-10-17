@@ -141,6 +141,6 @@ Json app_update_json(const AppUpdateStatus &status) {
        status.package_name.empty() ? Json(nullptr) : Json(status.package_name)},
       {"exit_code", status.exit_code},
       {"package_verified", false},
-      {"self_install_supported", false}};
+      {"self_install_supported", app_self_update_supported()}};
 }
 }  // namespace fixer

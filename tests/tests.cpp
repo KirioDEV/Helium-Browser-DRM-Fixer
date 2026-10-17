@@ -76,7 +76,7 @@ Cdm fixture(const std::string &version) {
   return cdm;
 }
 
-Bytes make_zip(const std::vector<std::pair<std::string, Bytes> > &entries) {
+Bytes make_zip(const std::vector<std::pair<std::string, Bytes>> &entries) {
   mz_zip_archive zip{};
   require(mz_zip_writer_init_heap(&zip, 0, 0) != 0, "Cannot create test ZIP");
   for (const auto &[name, bytes] : entries)
@@ -143,7 +143,7 @@ void app_update_tests() {
          "Compatible app update was not detected");
   const auto encoded = app_update_json(available);
   expect(encoded["package_verified"] == false &&
-             encoded["self_install_supported"] == false &&
+             encoded["self_install_supported"] == app_self_update_supported() &&
              encoded["repository"] == app_update_repository,
          "Metadata check claimed package verification or installation");
   expect(parse_app_update(response(metadata), "1.10.0").state ==
@@ -230,6 +230,21 @@ void app_update_tests() {
   expect(stopped && requests == 1, "Cancelled app checker started a request");
   expect(parse_options({"--check-app-update", "--json"}).check_app_update,
          "App update mode or JSON option missing");
+  expect(
+      parse_options({"--update-app"}).update_app &&
+          parse_options({"--restore-app", "target"}).restore_app == "target" &&
+          parse_options({"--app-update-status", "job", "--json"}).json,
+      "App update/helper CLI modes missing");
+  for (const auto &arguments : std::vector<std::vector<std::string>>{
+           {"--restore-app", ""},
+           {"--app-update-status", ""},
+           {"--update-app", "--check-app-update"},
+           {"--update-app", "--restore-app", "target"},
+           {"--update-app", "--json"},
+           {"--update-app", "--check"},
+           {"--restore-app", "target", "--helium-path", "WidevineCdm"}})
+    rejects([&] { (void)parse_options(arguments); },
+            "Conflicting/empty app operation");
   auto signed_metadata = metadata;
   for (const auto &suffix : {".manifest.json", ".manifest.sig"}) {
     auto asset = metadata["assets"][0];

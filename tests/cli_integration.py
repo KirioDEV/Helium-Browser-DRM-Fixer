@@ -111,6 +111,15 @@ def main():
         execute("version", ["--version"], read_only=True)
         execute("release verification helper not shipped", ["--verify-app-package"],
                 2, read_only=True)
+        for mode in (["--update-app"], ["--restore-app", "target"],
+                     ["--app-update-status", "job"]):
+            for conflict in (location, ["--check"], ["--check-app-update"], ["--source", "chrome"]):
+                execute(f"app helper conflict {mode[0]} {conflict[0]}",
+                        [*mode, *conflict], 2, read_only=True)
+        execute("empty app restore target", ["--restore-app", ""], 2, read_only=True)
+        execute("empty app helper job", ["--app-update-status", ""], 2, read_only=True)
+        execute("missing app helper status", ["--app-update-status", root / "missing-job", "--json"],
+                4, read_only=True)
         for conflict in (location, ["--check"], ["--dry-run"], ["--restore"],
                          ["--source", "chrome"], ["--force-download"]):
             execute(f"app update conflicts with {conflict[0]}",

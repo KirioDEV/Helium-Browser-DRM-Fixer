@@ -16,7 +16,9 @@ OperationResult execute_operation(const Options &options,
                                   const ProgressObserver &observer) {
   validate_options(options);
   require(!options.check && !options.dry_run && !options.help &&
-              !options.version && !options.json && !options.check_app_update,
+              !options.version && !options.json && !options.check_app_update &&
+              !options.update_app && options.restore_app.empty() &&
+              options.app_update_status.empty(),
           "Active operation does not accept inspection or help modes",
           Code::invalid);
   check_cancelled();

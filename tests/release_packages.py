@@ -16,11 +16,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from package_app_release import DOMAIN, SHARE, build_release, sign_manifest
 from cli_integration import source
 from app_transactions import exercise_app_transactions
+from app_processes import exercise_process_handoff
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--helper", type=Path, required=True)
+    parser.add_argument("--process-helper", type=Path)
+    parser.add_argument("--program", type=Path)
     parser.add_argument("--openssl", required=True)
     parser.add_argument("--staging-space", type=Path,
                         help="Optional private parent on a bounded filesystem (<2 MiB free)")
@@ -276,6 +279,10 @@ def main():
                 handoff.chmod(0o700)
         read_handoff("handoff remains valid after rejected tampering", accepted=True)
         passed += exercise_app_transactions(helper, root, handoff, public, other_public, binary)
+        if args.process_helper:
+            passed += exercise_process_handoff(args.process_helper.resolve(), helper, root,
+                                              handoff, public, other_public, binary,
+                                              args.program.resolve() if args.program else None)
         if windows:
             # A correctly signed development package with external runtimes is
             # valid for inspection, but must never be partly self-installed.

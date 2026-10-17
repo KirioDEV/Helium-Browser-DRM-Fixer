@@ -241,18 +241,67 @@ Eine Versionsabfrage ist **keine Paket- oder Signaturprüfung**.
 JSON-Schema 1 liefert `repository`, `installed_version`, `available_version`,
 `release_url`, `package_name`, `exit_code` und einen der Zustände
 `update_available`, `current`, `installed_newer`, `no_public_release` oder
-`no_compatible_package`. `package_verified` und `self_install_supported` sind
-derzeit immer `false`. Nicht vorhandene Angaben sind `null`.
+`no_compatible_package`. `package_verified` bleibt bei dieser Metadatenabfrage
+`false`. `self_install_supported` beschreibt die Build-Fähigkeit: mit festem
+Signierschlüssel unter Linux und bei eigenständigen Windows-MSVC-Builds `true`;
+bei Windows-MinGW-Entwicklungsbuilds `false`. Nicht vorhandene Angaben sind `null`.
 Kein öffentlich zugängliches Release (HTTP 404, möglicherweise auch ein
 nicht zugängliches Repository) und kein kompatibles Paket verwenden Exitcode 3;
 eine erfolgreich festgestellte Version Exitcode 0. Netzwerk-/HTTP-Fehler,
 ungültige Metadaten und Abbruch bleiben Fehler und werden nicht als „aktuell“
 ausgegeben. Fehler vor einem Prüfergebnis nutzen den normalen Fehlerpfad.
 
-`--update-app` und die eigentliche Selbstinstallation sind **noch nicht
-implementiert**. Paketerzeugung, Signaturprüfung, geprüftes Entpacken,
-Download und privates Staging sind als gemeinsame C++-Schnittstellen vorhanden.
-Austausch mit Rückfallmöglichkeit und der CLI-Befehl folgen noch.
+Ein App-Update wird ausdrücklich mit folgendem Befehl gestartet:
+
+```sh
+helium_drm_fixer --update-app
+```
+
+Der Befehl lädt ausschließlich ein neueres signiertes Paket aus dem festen
+Fork, prüft alle Dateien und startet eine private Kopie der **bisherigen** App
+als Helfer. Der Prozess beendet sich danach. Exitcode 0 und die Meldung
+`scheduled` bedeuten, dass die Übergabe angenommen wurde; die Installation
+erfolgt anschließend. Das heruntergeladene Programm wird nicht automatisch
+gestartet. Ohne neueres kompatibles/signiertes Paket gilt Exitcode 3.
+Der Programmname muss `helium_drm_fixer.exe` beziehungsweise `helium_drm_fixer`
+bleiben, und der Ordner muss für den Benutzer beschreibbar sein. Keine Erhöhung
+auf Administrator-/Root-Rechte. MinGW-Entwicklungsbuilds mit externen Runtime-DLLs
+unterstützen den produktiven Selbstupdate-Befehl nicht.
+
+Der ausgegebene `Job`-Pfad enthält das dauerhafte Ergebnis:
+
+```sh
+helium_drm_fixer --app-update-status "ABSOLUTER-JOB-PFAD" --json
+```
+
+Zustände: `waiting_for_parent`, `applying`, `installed`, `restored`, `failed`.
+Nur `installed` beziehungsweise `restored` bestätigen den Abschluss. Bei
+`failed` liefern `exit_code` und `detail` den Fehler; der Statusbefehl gibt
+denselben Fehlercode zurück. Statusabfragen laden nichts und schreiben nichts.
+Bei `waiting_for_parent` oder `applying` ist die Operation noch nicht als
+abgeschlossen bestätigt; nach einem Helferabsturz kann dieser Zustand bestehen
+bleiben und eine ausdrückliche Wiederherstellung nötig sein.
+
+Für Wiederherstellung oder Rücknahme des letzten App-Updates:
+
+```sh
+helium_drm_fixer --restore-app "ABSOLUTER-PFAD-ZUR-helium_drm_fixer"
+```
+
+Unter Windows endet der Zielname auf `.exe`. Falls die Programmdatei nach
+einem Absturz zwischen den Umbenennungen fehlt oder nicht startet, denselben
+Befehl mit dem beim Update ausgegebenen **Recovery helper** ausführen:
+
+```powershell
+& 'C:\PFAD\.helium-app-update-jobs\job-ID\update-helper.exe' --restore-app 'C:\PFAD\helium_drm_fixer.exe'
+```
+
+Unter Linux entsprechend den aufbewahrten `update-helper` verwenden. Auch die
+Wiederherstellung wird nach dem Ende des aufrufenden Prozesses ausgeführt und
+liefert einen neuen Job-Pfad. `.helium-app-update` und `.helium-app-update-jobs`
+neben der App enthalten Backups, geprüfte Pakete, Helfer und Statusdateien;
+sie werden nicht automatisch gelöscht. Während eines laufenden oder
+unterbrochenen Updates für die Wiederherstellung aufbewahren.
 Die spätere GUI soll beim Start im Hintergrund prüfen,
 unten rechts ihre App-Version und bei einem Update einen `Aktualisieren`-Knopf
 anzeigen. Installation erfolgt nach einem ausdrücklichen Befehl oder Klick.
@@ -365,13 +414,20 @@ Bei Fehlern oder Abbruch wird zurückgerollt. `restore_app_update` kann auch nac
 einem Prozessabsturz fortsetzen, selbst zwischen Umbenennung und Journal-Update.
 Veränderte Ziele oder Backups werden nicht überschrieben oder gelöscht.
 
-Der Aufrufer muss vor dem Austausch das Ende des Zielprozesses abwarten.
-Zwischen den Umbenennungen kann der Zielpfad kurz fehlen; nach einem Absturz
-muss dann der separate Helfer die Wiederherstellung ausführen. Dieser
-Prozess-Helfer und die CLI-Anbindung fehlen noch. Die vorhandenen CLI-Befehle
-starten weiterhin keinen App-Austausch oder Neustart.
-Der Release-Check lädt diese Signaturdateien noch nicht nach;
-seine JSON-Felder `package_verified` und `self_install_supported` bleiben `false`.
+Der native Helfer hält einen Windows-Prozesshandle beziehungsweise unter Linux
+ein pidfd und gleicht PID, Startzeit, Image-Pfad und bisherigen EXE-Hash ab.
+Die Startentscheidung wird erst nach der Bereitschaft des Helfers dauerhaft
+geschrieben; bei vorherigem Abbruch hat eine Abbruchdatei Vorrang. Maximal
+20 Sekunden für Bereitschaft/Startentscheidung und 60 Sekunden auf das Ende
+des Elternprozesses. Danach erneute Signatur-/Inventarprüfung und Offline-
+Transaktion. Der Helfer läuft ohne neues Konsolenfenster beziehungsweise mit
+umgeleiteten Standardstreams; das Ergebnis steht im privaten Job-Verzeichnis.
+Abgeschlossene Aufträge können nicht erneut ausgeführt werden. Weder CLI noch
+Auftragsdatei können einen anderen öffentlichen Prüfschlüssel konfigurieren.
+Zwischen den Umbenennungen kann der Zielpfad kurz fehlen; der persistente
+Helfer ermöglicht dann die ausdrückliche Wiederherstellung.
+Der Release-Check lädt weiterhin keine Signaturdateien nach und sein JSON-Feld
+`package_verified` bleibt `false`.
 Die CI erhält keinen privaten Schlüssel und erzeugt weiterhin nur Kandidaten.
 
 Der C++-Code verwendet das Google-Format aus der projektweiten

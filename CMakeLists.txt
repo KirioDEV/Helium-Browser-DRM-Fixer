@@ -59,7 +59,7 @@ if(FIXER_APP_UPDATE_PUBLIC_KEY)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${FIXER_APP_UPDATE_PUBLIC_KEY}")
 endif()
 configure_file(cmake/app_update_trust.hpp.in generated/app_update_trust.hpp @ONLY)
-add_library(fixer_core src/core.cpp src/status.cpp src/operation.cpp src/app_update.cpp src/app_download.cpp src/app_manifest.cpp src/app_stage.cpp src/app_handoff.cpp src/app_install.cpp src/platform.cpp src/directory.cpp src/network.cpp src/package.cpp src/install.cpp)
+add_library(fixer_core src/core.cpp src/status.cpp src/operation.cpp src/app_update.cpp src/app_download.cpp src/app_manifest.cpp src/app_stage.cpp src/app_handoff.cpp src/app_install.cpp src/app_process.cpp src/platform.cpp src/directory.cpp src/network.cpp src/package.cpp src/install.cpp)
 target_include_directories(fixer_core PUBLIC include)
 target_include_directories(fixer_core PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_link_libraries(fixer_core PUBLIC nlohmann_json::nlohmann_json PRIVATE miniz)
@@ -95,6 +95,8 @@ option(FIXER_REQUIRE_NETWORK_TESTS "Require Python/OpenSSL and native HTTPS test
 if(BUILD_TESTING)
     add_executable(fixer_tests tests/tests.cpp)
     target_link_libraries(fixer_tests PRIVATE fixer_core miniz)
+    add_executable(fixer_app_process_tests tests/app_process_fixture.cpp)
+    target_link_libraries(fixer_app_process_tests PRIVATE fixer_core)
     add_test(NAME security_and_transactions COMMAND fixer_tests)
     add_test(NAME cli_help COMMAND helium_drm_fixer --help)
     find_package(Python3 COMPONENTS Interpreter)
@@ -126,6 +128,8 @@ if(BUILD_TESTING)
             add_test(NAME signed_app_packages COMMAND "${Python3_EXECUTABLE}"
                 "${CMAKE_SOURCE_DIR}/tests/release_packages.py"
                 --helper "$<TARGET_FILE:fixer_tests>"
+                --process-helper "$<TARGET_FILE:fixer_app_process_tests>"
+                --program "$<TARGET_FILE:helium_drm_fixer>"
                 --openssl "${FIXER_OPENSSL_EXECUTABLE}")
             set_tests_properties(signed_app_packages PROPERTIES TIMEOUT 180)
             # Compile the native transport separately: fixture routing/trust must

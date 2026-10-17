@@ -118,7 +118,17 @@ Options parse_options(const std::vector<std::string> &args) {
       o.check = true;
     else if (flag == "--check-app-update")
       o.check_app_update = true;
-    else if (flag == "--json")
+    else if (flag == "--update-app")
+      o.update_app = true;
+    else if (flag == "--restore-app") {
+      o.restore_app = from_utf8(value());
+      require(!o.restore_app.empty(), "Empty app restore target",
+              Code::invalid);
+    } else if (flag == "--app-update-status") {
+      o.app_update_status = from_utf8(value());
+      require(!o.app_update_status.empty(), "Empty app update job",
+              Code::invalid);
+    } else if (flag == "--json")
       o.json = true;
     else if (flag == "--dry-run")
       o.dry_run = true;
@@ -148,11 +158,16 @@ Options parse_options(const std::vector<std::string> &args) {
 }
 
 void validate_options(const Options &o) {
-  require(!o.check_app_update ||
+  const auto app_modes = static_cast<int>(o.check_app_update) +
+                         static_cast<int>(o.update_app) +
+                         static_cast<int>(!o.restore_app.empty()) +
+                         static_cast<int>(!o.app_update_status.empty());
+  require(app_modes <= 1, "Choose one app update operation", Code::invalid);
+  require(app_modes == 0 ||
               (!o.check && !o.dry_run && !o.restore && !o.force &&
                o.target.empty() && o.helium_app.empty() && o.chrome.empty() &&
                o.package.empty() && o.source == "google"),
-          "--check-app-update cannot be combined with CDM options",
+          "App update operations cannot be combined with CDM options",
           Code::invalid);
   require(static_cast<int>(o.check) + static_cast<int>(o.dry_run) +
                   static_cast<int>(o.restore) <=
@@ -160,8 +175,10 @@ void validate_options(const Options &o) {
           "Choose one of --check, --dry-run or --restore", Code::invalid);
   require(o.source == "google" || o.source == "chrome" || o.source == "package",
           "Invalid source", Code::invalid);
-  require(!o.json || o.check || o.check_app_update,
-          "--json requires --check or --check-app-update", Code::invalid);
+  require(
+      !o.json || o.check || o.check_app_update || !o.app_update_status.empty(),
+      "--json requires --check, --check-app-update or --app-update-status",
+      Code::invalid);
   require(
       o.helium_app.empty() || (o.target.empty() && !o.restore),
       "--helium-app-path cannot be combined with --helium-path or --restore; "
@@ -183,6 +200,12 @@ std::string help_text() {
          "Usage: helium_drm_fixer [options]\n"
          "  --check                 Inspect local CDM; no network or writes\n"
          "  --check-app-update      Online app release check; no installation\n"
+         "  --update-app            Download signed app update; schedule "
+         "replacement on exit\n"
+         "  --restore-app PATH      Schedule recovery of the exact app "
+         "executable\n"
+         "  --app-update-status JOB Read the helper job result (also with "
+         "--json)\n"
          "  --json                  JSON result for --check or "
          "--check-app-update\n"
          "  --dry-run               Show planned actions; no network or "
@@ -229,6 +252,45 @@ int run(const Options &o) {
     std::cout << FIXER_VERSION << '\n';
     return 0;
   }
+  if (!o.app_update_status.empty()) {
+    const auto result = app_update_job_status(
+        fs::absolute(o.app_update_status).lexically_normal());
+    if (o.json)
+      std::cout << result.dump() << '\n';
+    else
+      std::cout << result.at("state").get<std::string>() << ": "
+                << result.at("detail").get<std::string>() << '\n';
+    return result.at("exit_code").get<int>();
+  }
+  if (o.update_app || !o.restore_app.empty()) {
+    fs::path job;
+    if (o.update_app) {
+      require(app_self_update_supported(),
+              "App self-updates require a configured signing key and a "
+              "standalone build");
+      const auto target = app_executable_path();
+      const auto hash = sha256(read_file(target, file_limit));
+      const auto prepared = prepare_app_update(app_update_jobs(target));
+      job =
+          start_app_update(prepared.directory, prepared.manifest.version, hash);
+    } else {
+      job = start_app_restore(fs::absolute(o.restore_app).lexically_normal());
+    }
+    std::cout << "App operation scheduled; helper will apply it after this "
+                 "process exits.\n"
+              << "Job: " << utf8(job) << '\n'
+              << "Inspect with --app-update-status JOB --json.\n"
+              << "Recovery helper: "
+              << utf8(job /
+#ifdef _WIN32
+                      "update-helper.exe"
+#else
+                      "update-helper"
+#endif
+                      )
+              << '\n';
+    return 0;
+  }
   if (o.check_app_update) {
     const auto status = check_app_update();
     if (o.json)
@@ -242,7 +304,7 @@ int run(const Options &o) {
               << "New app release: " << status.available_version << '\n'
               << status.release_url << '\n'
               << "Release metadata only; package integrity is not verified. "
-                 "Self-installation is not implemented yet.\n";
+                 "Use --update-app for a signature-verified update.\n";
           break;
         case AppUpdateState::current:
           std::cout
