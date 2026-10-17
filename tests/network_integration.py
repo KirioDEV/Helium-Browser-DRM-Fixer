@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import http.server
+import itertools
 import json
 from pathlib import Path
 import ssl
@@ -11,6 +12,31 @@ import sys
 import tempfile
 import threading
 import time
+
+
+def same_tls_host_sequence(observed, expected):
+    # TLS retries can produce multiple handshakes before one HTTP request.
+    # Compare host transitions, retaining unexpected names and host-order errors.
+    return bool(observed) and ([name for name, _ in itertools.groupby(observed)] ==
+                               [name for name, _ in itertools.groupby(expected)])
+
+
+def check_tls_host_sequence_regressions():
+    for observed, expected, accepted in (
+        (["dl.google.com", "dl.google.com"], ["dl.google.com"], True),
+        (["dl.google.com"], ["dl.google.com", "dl.google.com"], True),
+        (["github.com", "github.com", "release-assets.githubusercontent.com", "release-assets.githubusercontent.com"],
+         ["github.com", "release-assets.githubusercontent.com"], True),
+        ([], ["dl.google.com"], False),
+        ([None], ["dl.google.com"], False),
+        (["evil.example", "dl.google.com"], ["dl.google.com"], False),
+        (["release-assets.githubusercontent.com", "github.com"],
+         ["github.com", "release-assets.githubusercontent.com"], False),
+        (["github.com", "release-assets.githubusercontent.com", "github.com"],
+         ["github.com", "release-assets.githubusercontent.com"], False),
+    ):
+        if same_tls_host_sequence(observed, expected) != accepted:
+            raise RuntimeError(f"TLS host sequence regression: {observed} vs {expected}")
 
 
 class Server(http.server.ThreadingHTTPServer):
@@ -137,6 +163,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 
 def main():
+    check_tls_host_sequence_regressions()
     parser = argparse.ArgumentParser()
     parser.add_argument("--probe", required=True, type=Path)
     parser.add_argument("--production", required=True, type=Path)
@@ -222,7 +249,7 @@ def main():
                     hosts = expected_hosts or [host] * len(expected_paths)
                     if [value.split(":", 1)[0] for value in server.hosts] != hosts:
                         raise RuntimeError(f"{name}: IP pinning changed Host: {server.hosts}")
-                    if not server.server_names or server.server_names != hosts:
+                    if not same_tls_host_sequence(server.server_names, hosts):
                         raise RuntimeError(f"{name}: IP pinning changed TLS SNI: {server.server_names}")
                 passed += 1
                 print(f"{name}: passed ({response['elapsed_ms']} ms)", flush=True)
