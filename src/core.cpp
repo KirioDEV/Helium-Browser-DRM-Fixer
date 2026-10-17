@@ -128,6 +128,10 @@ Options parse_options(const std::vector<std::string> &args) {
       o.app_update_status = from_utf8(value());
       require(!o.app_update_status.empty(), "Empty app update job",
               Code::invalid);
+    } else if (flag == "--verify-app-release") {
+      o.verify_app_release = from_utf8(value());
+      require(!o.verify_app_release.empty(), "Empty app release package",
+              Code::invalid);
     } else if (flag == "--json")
       o.json = true;
     else if (flag == "--dry-run")
@@ -161,7 +165,8 @@ void validate_options(const Options &o) {
   const auto app_modes = static_cast<int>(o.check_app_update) +
                          static_cast<int>(o.update_app) +
                          static_cast<int>(!o.restore_app.empty()) +
-                         static_cast<int>(!o.app_update_status.empty());
+                         static_cast<int>(!o.app_update_status.empty()) +
+                         static_cast<int>(!o.verify_app_release.empty());
   require(app_modes <= 1, "Choose one app update operation", Code::invalid);
   require(app_modes == 0 ||
               (!o.check && !o.dry_run && !o.restore && !o.force &&
@@ -175,10 +180,9 @@ void validate_options(const Options &o) {
           "Choose one of --check, --dry-run or --restore", Code::invalid);
   require(o.source == "google" || o.source == "chrome" || o.source == "package",
           "Invalid source", Code::invalid);
-  require(
-      !o.json || o.check || o.check_app_update || !o.app_update_status.empty(),
-      "--json requires --check, --check-app-update or --app-update-status",
-      Code::invalid);
+  require(!o.json || o.check || o.check_app_update ||
+              !o.app_update_status.empty() || !o.verify_app_release.empty(),
+          "--json requires an inspection command", Code::invalid);
   require(
       o.helium_app.empty() || (o.target.empty() && !o.restore),
       "--helium-app-path cannot be combined with --helium-path or --restore; "
@@ -206,8 +210,10 @@ std::string help_text() {
          "executable\n"
          "  --app-update-status JOB Read the helper job result (also with "
          "--json)\n"
+         "  --verify-app-release ZIP Verify local signed release; no network "
+         "or writes\n"
          "  --json                  JSON result for --check or "
-         "--check-app-update\n"
+         "--check-app-update, --app-update-status or --verify-app-release\n"
          "  --dry-run               Show planned actions; no network or "
          "writes\n"
          "  --restore               Recover an interrupted install or restore "
@@ -261,6 +267,17 @@ int run(const Options &o) {
       std::cout << result.at("state").get<std::string>() << ": "
                 << result.at("detail").get<std::string>() << '\n';
     return result.at("exit_code").get<int>();
+  }
+  if (!o.verify_app_release.empty()) {
+    const auto result = inspect_app_release(o.verify_app_release);
+    if (o.json)
+      std::cout << result.dump() << '\n';
+    else
+      std::cout << "Verified signed app release "
+                << result.at("version").get<std::string>() << " ("
+                << result.at("platform").get<std::string>()
+                << "). No installation performed.\n";
+    return 0;
   }
   if (o.update_app || !o.restore_app.empty()) {
     fs::path job;

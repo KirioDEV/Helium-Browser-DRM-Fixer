@@ -30,6 +30,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           New-Item -ItemType Directory -Path build/releases | Out-Null
           python tools/package_app_release.py --staging build/package --version $releaseVersion --platform windows-x64 --output build/releases
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python tools/sign_app_candidate.py --candidate "build/releases/helium-drm-fixer-cpp-$releaseVersion-windows-x64.zip" --check-only
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-x64-standalone-exe
@@ -85,6 +87,7 @@ jobs:
           mkdir -p build/releases
           app_version=$(build/release/helium_drm_fixer --version)
           python3 tools/package_app_release.py --staging build/package --version "$app_version" --platform linux-x86_64-ubuntu24.04 --output build/releases
+          python3 tools/sign_app_candidate.py --candidate "build/releases/helium-drm-fixer-cpp-$app_version-linux-x86_64-ubuntu24.04.zip" --check-only
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: matrix.compiler == 'gcc'
         with:

@@ -17,6 +17,7 @@ from package_app_release import DOMAIN, SHARE, build_release, sign_manifest
 from cli_integration import source
 from app_transactions import exercise_app_transactions
 from app_processes import exercise_process_handoff
+from candidate_signing import exercise_candidate_signing
 
 
 def main():
@@ -67,6 +68,8 @@ def main():
         paths = build_release(staging, "1.2.3", platform, output, key, args.openssl)
         package, manifest, signature = paths
         original_package, original_manifest, original_signature = (path.read_bytes() for path in paths)
+        passed += exercise_candidate_signing(helper, args.program.resolve() if args.program else None,
+                                            root, package, public, key, other_key, args.openssl)
 
         def stage_case(name, parent, *, accepted=False, cancelled=False):
             nonlocal passed

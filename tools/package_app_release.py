@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 import stat
 import subprocess
+import sys
 import zipfile
 
 REPOSITORY = "KirioDEV/Helium-Browser-DRM-Fixer"
@@ -89,7 +90,7 @@ def openssl(arguments, data=None, cwd=None):
     return result.stdout
 
 
-def sign_manifest(manifest, key, openssl_path, password_env=None):
+def sign_manifest(manifest, key, openssl_path, password_env=None, trusted_public=None):
     if os.path.dirname(openssl_path):
         openssl_path = os.path.abspath(openssl_path)
     key = Path(key).resolve(strict=True)
@@ -105,6 +106,8 @@ def sign_manifest(manifest, key, openssl_path, password_env=None):
     public = openssl([openssl_path, "pkey", "-in", key.name, *password,
                       "-pubout", "-outform", "DER"], cwd=key.parent)
     size = rsa_signature_size(public)
+    if trusted_public is not None and public != trusted_public:
+        raise ValueError("Signing key does not match the pinned public release key")
     signature = openssl([openssl_path, "dgst", "-sha256", "-sign", key.name,
                          *password, "-sigopt", "rsa_padding_mode:pkcs1"], DOMAIN + manifest, cwd=key.parent)
     if len(signature) != size:
@@ -112,15 +115,15 @@ def sign_manifest(manifest, key, openssl_path, password_env=None):
     return signature
 
 
-def read_regular(path):
+def read_regular(path, limit=64 * 1024 * 1024):
     before = path.lstat()
-    if linked(before) or not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > 64 * 1024 * 1024:
+    if linked(before) or not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > limit:
         raise ValueError("Release inputs must be bounded, regular files without links")
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     descriptor = os.open(path, flags)
     with os.fdopen(descriptor, "rb") as stream:
         opened = os.fstat(stream.fileno())
-        data = stream.read(64 * 1024 * 1024 + 1)
+        data = stream.read(limit + 1)
         after = os.fstat(stream.fileno())
     identity = lambda info: (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_nlink)
     if linked(opened) or identity(before) != identity(opened) or identity(opened) != identity(after) or len(data) != opened.st_size:
@@ -219,6 +222,8 @@ def build_release(staging, version, platform, output, signing_key=None,
 
 
 def main():
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--staging", type=Path, required=True)
     parser.add_argument("--version", required=True)

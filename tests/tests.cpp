@@ -1012,6 +1012,13 @@ int main(int argc, char **argv) {
                 << '\n';
       return 0;
     }
+    if (argc == 4 && std::string(argv[1]) == "--inspect-app-release") {
+      std::cout << inspect_app_release_with_trusted_key(
+                       from_utf8(argv[2]), read_file(from_utf8(argv[3]), 1024))
+                       .dump()
+                << '\n';
+      return 0;
+    }
     if (argc == 3 && std::string(argv[1]) == "--create-private-app-staging") {
       create_private_dir(from_utf8(argv[2]), true);
       return 0;

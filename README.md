@@ -334,6 +334,49 @@ Private Schlüssel müssen außerhalb von Staging und Ausgabe liegen und werden
 nicht in das Paket kopiert. Ohne Schlüssel ist die Ausgabe ausdrücklich ein
 unsignierter Kandidat.
 
+Für CI-Artefakte ist `tools/sign_app_candidate.py` der bevorzugte Signierweg.
+Die Actions-Artefakte `windows-x64-unsigned-update-candidate` und
+`linux-x86_64-unsigned-update-candidate` enthalten bereits das fertige App-ZIP
+und sein Manifest. Nur die äußere Actions-Download-ZIP entpacken; die innere
+App-ZIP unverändert lassen. Zuerst ohne Schlüssel prüfen:
+
+```sh
+python tools/sign_app_candidate.py --candidate build/release-input/helium-drm-fixer-cpp-0.1.0-windows-x64.zip --check-only
+```
+
+Der Check liest beide Plattformformate auch plattformübergreifend, prüft aber
+keine Herausgebersignatur (`signature_verified: false`). Er wird auch in CI
+ausgeführt. Für ein Selbstupdate-Paket werden externe Runtime-DLLs abgelehnt.
+Zum lokalen Signieren anschließend `--signing-key`, `--public-key
+keys/app-update-public.der`, `--output` und bei verschlüsseltem Schlüssel
+`--key-password-env FIXER_RELEASE_KEY_PASSWORD` angeben; `--check-only` entfällt.
+Die Passphrase muss dafür verdeckt abgefragt und vorübergehend über diese
+Umgebungsvariable bereitgestellt werden. Privaten Schlüsselinhalt und Passphrase nicht in Git
+oder Befehlsargumente kopieren. OpenSSL kann mit `--openssl` ausgewählt werden.
+
+Der Signierer gleicht den privaten mit dem separat angegebenen öffentlichen
+Projektschlüssel ab und prüft die erzeugte Signatur erneut. Er übernimmt ZIP
+und Manifest bytegenau, ohne Entpacken, Neuverpacken oder Ausführen des Payloads.
+Der Ausgabeordner darf noch nicht existieren; sein Elternordner muss existieren.
+Ein abgebrochener Schreibvorgang kann einen unvollständigen Ausgabeordner
+hinterlassen. Für einen neuen Versuch einen neuen Ausgabepfad verwenden.
+
+Das fertige Paket mit einer vertrauenswürdigen App derselben Plattform prüfen:
+
+```sh
+helium_drm_fixer --verify-app-release PFAD/helium-drm-fixer-cpp-0.1.0-linux-x86_64-ubuntu24.04.zip --json
+```
+
+Unter Windows entsprechend `.exe` und das Windows-Paket verwenden. Der Befehl
+nutzt ausschließlich den eingebauten öffentlichen Schlüssel und prüft Signatur,
+Manifest, ZIP, Dateihashes und Binärformate. Er lädt nichts, entpackt nur im
+Speicher und installiert/startet nichts (`installation_performed: false`).
+Die Offline-Prüfung erlaubt auch dieselbe oder eine ältere Paketversion;
+`--update-app` verlangt weiterhin eine neuere Version. Ein Paket für die andere
+Plattform wird abgelehnt. Vor der Veröffentlichung beide Plattformen nativ
+prüfen und alle drei Dateien pro Plattform unverändert hochladen. Die CI
+veröffentlicht und signiert weiterhin nichts automatisch.
+
 Das Manifest enthält Schema, App-/Repository-Identität, Version, Plattform,
 Paketname/-größe/-SHA-256 und ein Inventar aus Dateipfaden, Größen, Hashes und
 Ausführungskennzeichen. Signiert werden die exakten UTF-8-Bytes einschließlich

@@ -54,6 +54,12 @@ AppPackageManifest verify_app_manifest(std::span<const unsigned char> manifest,
                                        const std::string &expected_version);
 bool app_update_key_configured();
 
+// Offline release inspection with the build-time trust root. Accepts current
+// or older versions for release checks, but never installs or executes files.
+Json inspect_app_release(const fs::path &package);
+Json inspect_app_release_with_trusted_key(
+    const fs::path &package, std::span<const unsigned char> trusted_key);
+
 // Digest verification does not unpack a ZIP or authorize installation.
 void verify_app_package_digest(const AppPackageManifest &manifest,
                                std::span<const unsigned char> package);
