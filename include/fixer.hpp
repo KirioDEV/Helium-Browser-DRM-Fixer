@@ -75,6 +75,9 @@ void replace_text(const fs::path &path, const std::string &text);
 
 void assert_safe_path(const fs::path &path, bool allow_missing = true);
 
+// Read-only ownership/permission check; never creates a missing directory.
+void assert_private_dir(const fs::path &path);
+
 void create_private_dir(const fs::path &path, bool exclusive = false);
 
 void durable_rename(const fs::path &source, const fs::path &dest,

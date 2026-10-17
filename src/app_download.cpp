@@ -83,6 +83,7 @@ PreparedAppUpdate prepare(const AppUpdateDownload &download,
   const auto package =
       app_asset_request_with_transport(download.package, transport);
   result.directory = stage_app_package(result.manifest, package, parent);
+  save_prepared_app_update(result);
   return result;
 }
 }  // namespace

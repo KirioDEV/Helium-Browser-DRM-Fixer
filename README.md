@@ -344,7 +344,19 @@ Erst nach gültiger Signatur und Übereinstimmung der signierten mit der
 angekündigten Paketgröße wird das ZIP geladen (höchstens 128 MiB).
 Ohne eingebauten öffentlichen Schlüssel beginnt die Anwendung keine dieser
 Vorbereitungsanfragen. Das Ergebnis enthält den Staging-Pfad sowie die exakten
-signierten Manifest-/Signaturbytes für die spätere erneute Prüfung.
+signierten Manifest-/Signaturbytes für die spätere erneute Prüfung. Diese Bytes
+werden außerdem als `app-update.manifest.json` und `app-update.manifest.sig`
+im privaten Staging gespeichert, synchronisiert und zurückgelesen.
+
+`read_prepared_app_update` kann die Übergabe in einem neuen Prozess ausschließlich
+lesend prüfen: fest eingebauter öffentlicher Schlüssel, erwartete neuere Version,
+privater Besitzer/Ordner, exaktes Dateiinventar, Größen, SHA-256 und Binärformate.
+Zusätzliche Dateien oder leere Fremdverzeichnisse, fehlende Metadaten, Links und
+Hardlinks werden abgelehnt. Das Ergebnis enthält die frisch geprüften Dateibytes
+im Speicher; ein späterer Austausch muss die veränderlichen Staging-Dateien
+dadurch nicht erneut öffnen. Unvollständige Übergaben bleiben gesperrt.
+Der separate Update-Helfer, App-Austausch und Wiederherstellung sind noch offen;
+dieser Vorbereitungsschritt startet und ersetzt keine Anwendung.
 Der Release-Check lädt diese Signaturdateien noch nicht nach;
 seine JSON-Felder `package_verified` und `self_install_supported` bleiben `false`.
 Die CI erhält keinen privaten Schlüssel und erzeugt weiterhin nur Kandidaten.
@@ -442,8 +454,8 @@ Program Files einschließlich `ProgramW6432`, Benutzer- und Cachepfade sind dabe
 auf temporäre Fixtures gesetzt. Unter Linux prüfen fünf Szenarien die
 Optionskonflikte und die Beibehaltung der profilbezogenen Zielauswahl.
 
-Eine weitere CTest-Gruppe prüft 69 Releasefälle unter Windows beziehungsweise
-70 unter Linux mit kurzlebigen Testschlüsseln:
+Eine weitere CTest-Gruppe prüft 87 Releasefälle unter Windows beziehungsweise
+89 unter Linux mit kurzlebigen Testschlüsseln:
 RSA-3072/4096, falsche/zu schwache/EC-Schlüssel, Signatur-Kontext, manipulierte
 Manifeste und ZIPs, Plattform-/Versionsbindung, Inventar-/Pfadfehler, unveränderte
 Ausgaben bei abgelehnten Aufrufen und verschlüsselte Schlüssel. Erneut signierte
@@ -456,6 +468,9 @@ Der vollständige Downloadablauf wird mit einem kontrollierten Transport geprüf
 gültige Pakete erreichen das Staging, falsche Schlüssel/Signaturen stoppen vor
 dem Paketdownload, beschädigte Pakete vor dem Schreiben. Fehlende Signaturen,
 veraltete Versionen, Abbruch und fehlender Vertrauensanker lösen keine Asset-Anfragen aus.
+Persistierte Übergaben werden in einem neuen Prozess geprüft, auch nach
+Manipulation von Signatur, Manifest, Nutzdateien und Ordnerstruktur. Die Prüfung
+darf keine Dateien schreiben und akzeptiert keine fehlenden oder verlinkten Ziele.
 Optional prüft `tests/release_packages.py --staging-space /pfad` auf einem
 separaten begrenzten Linux-Testdateisystem mit weniger als 2 MiB freiem Platz,
 dass ein Schreibfehler keinen `.ready`-Ordner veröffentlicht. Die synthetischen

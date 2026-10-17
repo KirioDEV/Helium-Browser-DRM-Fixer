@@ -188,9 +188,92 @@ def main():
                 raise RuntimeError(f"{name}: did not publish prepared package")
             passed += 1
             print(f"{name}: passed", flush=True)
+            return Path(status["directory"]) if accepted else None
 
         sequence = (urls[1], urls[2], urls[0])
-        download_case("verified download to private staging", accepted=True, expected_requests=sequence)
+        handoff = download_case("verified download to private staging", accepted=True, expected_requests=sequence)
+        if (handoff / "app-update.manifest.json").read_bytes() != original_manifest or (handoff / "app-update.manifest.sig").read_bytes() != original_signature:
+            raise RuntimeError("Prepared update did not preserve exact signed metadata")
+
+        def read_handoff(name, *, path=handoff, key=public, version="1.2.3", accepted=False, configured=False):
+            nonlocal passed
+            before = {item.relative_to(handoff): item.read_bytes() for item in handoff.rglob("*") if item.is_file() and not item.is_symlink()}
+            arguments = [str(helper), "--read-app-handoff-configured", str(path), version] if configured else [str(helper), "--read-app-handoff", str(path), str(key), version]
+            result = subprocess.run(arguments, capture_output=True, timeout=15)
+            if (result.returncode == 0) != accepted:
+                raise RuntimeError(f"{name}: exit {result.returncode}: {result.stderr!r}")
+            if accepted:
+                status = json.loads(result.stdout)
+                expected = {file["path"]: file["sha256"] for file in expected_files}
+                if status["files"] != expected or status["version"] != "1.2.3":
+                    raise RuntimeError("Reloaded handoff bytes differ from signed inventory")
+            after = {item.relative_to(handoff): item.read_bytes() for item in handoff.rglob("*") if item.is_file() and not item.is_symlink()}
+            if before != after:
+                raise RuntimeError("Handoff reload changed staged files")
+            passed += 1
+            print(f"{name}: passed", flush=True)
+
+        read_handoff("fresh process revalidates persisted handoff", accepted=True)
+        read_handoff("handoff rejects foreign signing key", key=other_public)
+        read_handoff("handoff rejects incorrect expected version", version="1.2.4")
+        read_handoff("handoff rejects downgrade", version="0.0.1")
+        read_handoff("handoff uses compiled trust only", configured=True)
+        manifest_file = handoff / "app-update.manifest.json"
+        signature_file = handoff / "app-update.manifest.sig"
+        manifest_file.write_bytes(original_manifest + b" ")
+        read_handoff("handoff detects changed manifest")
+        manifest_file.write_bytes(original_manifest)
+        signature_file.write_bytes(original_signature[:-1])
+        read_handoff("handoff detects truncated signature")
+        signature_file.write_bytes(original_signature)
+        signature_file.rename(handoff / "missing.sig")
+        read_handoff("handoff rejects partial metadata")
+        (handoff / "missing.sig").rename(signature_file)
+        staged_binary = handoff / executable.relative_to(staging)
+        staged_binary.write_bytes(bytes(binary[:-1]) + bytes([binary[-1] ^ 1]))
+        read_handoff("handoff detects changed executable")
+        staged_binary.write_bytes(binary)
+        unlisted = handoff / "unlisted.txt"
+        unlisted.write_bytes(b"unexpected")
+        read_handoff("handoff rejects additional file")
+        unlisted.unlink()
+        unlisted.mkdir()
+        read_handoff("handoff rejects additional empty directory")
+        unlisted.rmdir()
+        readme_file = handoff / SHARE / "README.md"
+        readme_file.unlink()
+        read_handoff("handoff rejects missing signed file")
+        readme_file.write_text("Synthetic release test\n", encoding="utf-8")
+        alias = root / "handoff-hardlink"
+        os.link(staged_binary, alias)
+        read_handoff("handoff rejects hardlinked executable")
+        alias.unlink()
+        read_handoff("handoff rejects unrelated directory name", path=stage_parent)
+        missing_handoff = stage_parent / ("app-update-" + "0" * 32 + ".ready")
+        read_handoff("handoff never creates missing directory", path=missing_handoff)
+        if missing_handoff.exists():
+            raise RuntimeError("Read-only handoff check created its target")
+        signature_alias = root / "handoff-signature-hardlink"
+        os.link(signature_file, signature_alias)
+        read_handoff("handoff rejects hardlinked signature")
+        signature_alias.unlink()
+        linked_handoff = stage_parent / ("app-update-" + "1" * 32 + ".ready")
+        if windows:
+            command(["cmd.exe", "/d", "/c", "mklink", "/J", str(linked_handoff), str(handoff)])
+        else:
+            linked_handoff.symlink_to(handoff, target_is_directory=True)
+        try:
+            read_handoff("handoff rejects linked root", path=linked_handoff)
+        finally:
+            if windows: linked_handoff.rmdir()
+            else: linked_handoff.unlink()
+        if not windows:
+            handoff.chmod(0o755)
+            try:
+                read_handoff("handoff rejects nonprivate root")
+            finally:
+                handoff.chmod(0o700)
+        read_handoff("handoff remains valid after rejected tampering", accepted=True)
         download_case("untrusted download stops before package", key=str(other_public), expected_requests=sequence[:2])
         signature.write_bytes(original_signature[:-1] + bytes([original_signature[-1] ^ 1]))
         download_case("invalid signature stops before package", expected_requests=sequence[:2])

@@ -1001,6 +1001,24 @@ int main(int argc, char **argv) {
       create_private_dir(from_utf8(argv[2]), true);
       return 0;
     }
+    if ((argc == 5 && std::string(argv[1]) == "--read-app-handoff") ||
+        (argc == 4 &&
+         std::string(argv[1]) == "--read-app-handoff-configured")) {
+      const auto directory = from_utf8(argv[2]);
+      const auto verified =
+          argc == 5
+              ? read_prepared_app_update_with_trusted_key(
+                    directory, argv[4], read_file(from_utf8(argv[3]), 1024))
+              : read_prepared_app_update(directory, argv[3]);
+      Json files = Json::object();
+      for (const auto &file : verified.files)
+        files[file.path] = sha256(file.bytes);
+      std::cout << Json{{"version", verified.manifest.version},
+                        {"files", files}}
+                       .dump()
+                << '\n';
+      return 0;
+    }
     if (argc == 3 && std::string(argv[1]) == "--download-app-fixture") {
       const auto configuration = read_file(from_utf8(argv[2]), 65536);
       const auto config =

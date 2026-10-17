@@ -446,21 +446,26 @@ void replace_text(const fs::path &path, const std::string &text) {
   }
 }
 
+void assert_private_dir(const fs::path &path) {
+  assert_safe_path(path, false);
+  require(fs::is_directory(path), "Expected a directory");
+  const auto existing = pin_directory(path);
+#ifdef _WIN32
+  check_private_acl(path);
+#else
+  struct stat info{};
+  require(fstat(existing.back()->value, &info) == 0 &&
+              info.st_uid == geteuid() && (info.st_mode & 0077) == 0,
+          "Managed directory is not private or not owned by this user");
+#endif
+}
+
 void create_private_dir(const fs::path &path, bool exclusive) {
   assert_safe_path(path);
   const auto parent = pin_directory(fs::absolute(path).parent_path());
   if (fs::exists(path)) {
     require(!exclusive, "Private directory already exists", Code::failure);
-    require(fs::is_directory(path), "Expected a directory");
-    const auto existing = pin_directory(path);
-#ifdef _WIN32
-    check_private_acl(path);
-#else
-    struct stat info{};
-    require(fstat(existing.back()->value, &info) == 0 &&
-                info.st_uid == geteuid() && (info.st_mode & 0077) == 0,
-            "Managed directory is not private or not owned by this user");
-#endif
+    assert_private_dir(path);
     return;
   }
   require(fs::is_directory(path.parent_path()),

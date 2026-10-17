@@ -102,6 +102,23 @@ struct PreparedAppUpdate {
   Bytes signed_manifest, signature;
 };
 
+struct VerifiedAppUpdate {
+  AppPackageManifest manifest;
+  // Freshly checked bytes, so replacement need not reopen mutable staged files.
+  std::vector<AppPackageFile> files;
+};
+
+// Persist exact signature/manifest bytes beside the payload. Requires a freshly
+// verified preparation result; this alone never authorizes an app replacement.
+void save_prepared_app_update(const PreparedAppUpdate &prepared);
+// Read-only cross-process handoff: verifies build-time trust, newer version and
+// every staged entry again. Missing/partial metadata is always rejected.
+VerifiedAppUpdate read_prepared_app_update(const fs::path &directory,
+                                           const std::string &expected_version);
+VerifiedAppUpdate read_prepared_app_update_with_trusted_key(
+    const fs::path &directory, const std::string &expected_version,
+    std::span<const unsigned char> trusted_key);
+
 AppUpdateDownload parse_app_update_download(
     const HttpResponse &response, const std::string &installed_version);
 // Separate from the Google/CDM URL policy. Exactly one redirect to GitHub's
