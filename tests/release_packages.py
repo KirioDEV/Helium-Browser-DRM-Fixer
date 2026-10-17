@@ -15,6 +15,7 @@ import zipfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from package_app_release import DOMAIN, SHARE, build_release, sign_manifest
 from cli_integration import source
+from app_transactions import exercise_app_transactions
 
 
 def main():
@@ -274,6 +275,48 @@ def main():
             finally:
                 handoff.chmod(0o700)
         read_handoff("handoff remains valid after rejected tampering", accepted=True)
+        passed += exercise_app_transactions(helper, root, handoff, public, other_public, binary)
+        if windows:
+            # A correctly signed development package with external runtimes is
+            # valid for inspection, but must never be partly self-installed.
+            runtime_files = []
+            runtime_manifest = json.loads(original_manifest)
+            library = bytearray(binary)
+            library[87] |= 0x20
+            for name in ("libstdc++-6.dll", "libgcc_s_seh-1.dll", "libwinpthread-1.dll"):
+                path = handoff / "bin" / name
+                path.write_bytes(library)
+                runtime_files.append(path)
+                runtime_manifest["files"].append({
+                    "path": "bin/" + name, "size": len(library),
+                    "sha256": hashlib.sha256(library).hexdigest(), "executable": False,
+                })
+            runtime_bytes = json.dumps(runtime_manifest, sort_keys=True, separators=(",", ":")).encode()
+            manifest_file.write_bytes(runtime_bytes)
+            signature_file.write_bytes(sign_manifest(runtime_bytes, key, args.openssl))
+            try:
+                command([str(helper), "--read-app-handoff", str(handoff), str(public), "1.2.3"])
+                target_parent = root / "runtime package target"
+                command([str(helper), "--create-private-app-staging", str(target_parent)])
+                target = target_parent / executable.name
+                old = bytes(binary) + b"previous application"
+                target.write_bytes(old)
+                config = root / "runtime transaction.json"
+                config.write_text(json.dumps({
+                    "target": str(target), "directory": str(handoff), "key": str(public),
+                    "old_sha256": hashlib.sha256(old).hexdigest(),
+                }), encoding="utf-8")
+                result = subprocess.run([str(helper), "--app-transaction-fixture", str(config)],
+                                        capture_output=True, timeout=15)
+                if result.returncode != 4 or target.read_bytes() != old or set(target_parent.iterdir()) != {target}:
+                    raise RuntimeError("App updater partially installed an external-runtime package")
+                passed += 1
+                print("app replacement rejects signed external-runtime package: passed", flush=True)
+            finally:
+                manifest_file.write_bytes(original_manifest)
+                signature_file.write_bytes(original_signature)
+                for path in runtime_files:
+                    path.unlink()
         download_case("untrusted download stops before package", key=str(other_public), expected_requests=sequence[:2])
         signature.write_bytes(original_signature[:-1] + bytes([original_signature[-1] ^ 1]))
         download_case("invalid signature stops before package", expected_requests=sequence[:2])
@@ -522,7 +565,7 @@ def main():
             os.environ.pop("FIXER_TEST_KEY_PASSWORD", None)
         passed += 1
         print("encrypted signing key via passphrase environment: passed", flush=True)
-    print(f"{passed} signed release scenarios passed; no key or package installed")
+    print(f"{passed} signed release scenarios passed; temporary keys and synthetic app files only")
 
 
 if __name__ == "__main__":

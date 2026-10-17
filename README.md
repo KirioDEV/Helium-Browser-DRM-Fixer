@@ -355,8 +355,21 @@ Zusätzliche Dateien oder leere Fremdverzeichnisse, fehlende Metadaten, Links un
 Hardlinks werden abgelehnt. Das Ergebnis enthält die frisch geprüften Dateibytes
 im Speicher; ein späterer Austausch muss die veränderlichen Staging-Dateien
 dadurch nicht erneut öffnen. Unvollständige Übergaben bleiben gesperrt.
-Der separate Update-Helfer, App-Austausch und Wiederherstellung sind noch offen;
-dieser Vorbereitungsschritt startet und ersetzt keine Anwendung.
+`install_prepared_app_update` implementiert den Offline-Dateiaustausch: erneute
+Signatur-/Inventarprüfung, absoluter Zielpfad, erwarteter Hash der bisherigen
+Programmdatei und privates Transaktionsverzeichnis `.helium-app-update` neben
+der Anwendung. Es ersetzt ausschließlich die Programmdatei eines eigenständigen
+Pakets; Pakete mit externen Runtime-DLLs werden abgelehnt. Die Dokumentation
+bleibt im Staging. Backup und Journal bleiben für die Wiederherstellung erhalten.
+Bei Fehlern oder Abbruch wird zurückgerollt. `restore_app_update` kann auch nach
+einem Prozessabsturz fortsetzen, selbst zwischen Umbenennung und Journal-Update.
+Veränderte Ziele oder Backups werden nicht überschrieben oder gelöscht.
+
+Der Aufrufer muss vor dem Austausch das Ende des Zielprozesses abwarten.
+Zwischen den Umbenennungen kann der Zielpfad kurz fehlen; nach einem Absturz
+muss dann der separate Helfer die Wiederherstellung ausführen. Dieser
+Prozess-Helfer und die CLI-Anbindung fehlen noch. Die vorhandenen CLI-Befehle
+starten weiterhin keinen App-Austausch oder Neustart.
 Der Release-Check lädt diese Signaturdateien noch nicht nach;
 seine JSON-Felder `package_verified` und `self_install_supported` bleiben `false`.
 Die CI erhält keinen privaten Schlüssel und erzeugt weiterhin nur Kandidaten.

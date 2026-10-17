@@ -1001,6 +1001,59 @@ int main(int argc, char **argv) {
       create_private_dir(from_utf8(argv[2]), true);
       return 0;
     }
+    if (argc == 3 && std::string(argv[1]) == "--app-transaction-fixture") {
+      const auto bytes = read_file(from_utf8(argv[2]), 16384);
+      const auto config = parse_json(std::string(bytes.begin(), bytes.end()));
+      const auto target = from_utf8(config.at("target").get<std::string>());
+      const InstallHooks hooks{{[&](const std::string &phase) {
+        if (phase != config.value("phase", "")) return;
+        const auto action = config.value("fault", "fail");
+        if (action == "crash") std::_Exit(77);
+        if (action == "lock") {
+          rejects([&] { restore_app_update(target); },
+                  "Concurrent app recovery must fail to acquire the lock");
+        } else if (action == "cancel") {
+          cancelled = true;
+        } else if (action == "tamper") {
+          if (fs::exists(target)) fs::remove(target);
+          write_text(target, "unrelated user file");
+        } else {
+          throw Error("Injected app transaction failure", Code::failure);
+        }
+      }}};
+#ifdef _WIN32
+      struct AppFileLock {
+        HANDLE value = INVALID_HANDLE_VALUE;
+        ~AppFileLock() {
+          if (value != INVALID_HANDLE_VALUE) CloseHandle(value);
+        }
+      } locked;
+      if (config.value("locked_target", false)) {
+        locked.value =
+            CreateFileW(target.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+                        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        require(locked.value != INVALID_HANDLE_VALUE,
+                "Cannot lock synthetic app executable", Code::failure);
+      }
+#endif
+      cancelled = config.value("cancelled", false);
+      if (config.value("operation", "install") == "restore") {
+        restore_app_update(target, hooks);
+      } else {
+        const auto directory =
+            from_utf8(config.at("directory").get<std::string>());
+        const auto version = config.value("version", "1.2.3");
+        const auto hash = config.at("old_sha256").get<std::string>();
+        if (config.value("compiled_trust", false))
+          install_prepared_app_update(directory, version, target, hash, hooks);
+        else
+          install_prepared_app_update_with_trusted_key(
+              directory, version, target, hash,
+              read_file(from_utf8(config.at("key").get<std::string>()), 1024),
+              hooks);
+      }
+      return 0;
+    }
     if ((argc == 5 && std::string(argv[1]) == "--read-app-handoff") ||
         (argc == 4 &&
          std::string(argv[1]) == "--read-app-handoff-configured")) {

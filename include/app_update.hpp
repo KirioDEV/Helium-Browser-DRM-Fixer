@@ -119,6 +119,24 @@ VerifiedAppUpdate read_prepared_app_update_with_trusted_key(
     const fs::path &directory, const std::string &expected_version,
     std::span<const unsigned char> trusted_key);
 
+// Offline executable replacement backend. The caller must first wait for the
+// target process to exit. Revalidates the handoff before filesystem writes and
+// binds the transaction to an absolute target and the previously observed hash.
+// Only standalone packages are supported; documentation remains in staging.
+// Keeps durable backup/journal files in a private sibling state directory.
+void install_prepared_app_update(const fs::path &directory,
+                                 const std::string &expected_version,
+                                 const fs::path &target,
+                                 const std::string &expected_old_sha256,
+                                 const InstallHooks &hooks = {});
+void install_prepared_app_update_with_trusted_key(
+    const fs::path &directory, const std::string &expected_version,
+    const fs::path &target, const std::string &expected_old_sha256,
+    std::span<const unsigned char> trusted_key, const InstallHooks &hooks = {});
+// Recovery ignores cancellation once started. Unknown/modified files are never
+// overwritten or deleted. May also explicitly roll back a committed update.
+void restore_app_update(const fs::path &target, const InstallHooks &hooks = {});
+
 AppUpdateDownload parse_app_update_download(
     const HttpResponse &response, const std::string &installed_version);
 // Separate from the Google/CDM URL policy. Exactly one redirect to GitHub's
