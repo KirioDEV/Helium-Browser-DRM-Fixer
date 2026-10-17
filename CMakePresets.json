@@ -2,7 +2,7 @@
   "version": 5,
   "cmakeMinimumRequired": {"major": 3, "minor": 24, "patch": 0},
   "configurePresets": [
-    {"name": "debug", "generator": "Ninja", "binaryDir": "${sourceDir}/build/debug", "cacheVariables": {"CMAKE_BUILD_TYPE": "Debug", "BUILD_TESTING": "ON"}},
+    {"name": "debug", "generator": "Ninja", "binaryDir": "${sourceDir}/build/debug", "cacheVariables": {"CMAKE_BUILD_TYPE": "Debug", "BUILD_TESTING": "ON", "FIXER_APP_UPDATE_PUBLIC_KEY": "${sourceDir}/keys/app-update-public.der"}},
     {"name": "release", "inherits": "debug", "binaryDir": "${sourceDir}/build/release", "cacheVariables": {"CMAKE_BUILD_TYPE": "Release"}},
     {"name": "sanitizers", "inherits": "debug", "binaryDir": "${sourceDir}/build/sanitizers", "condition": {"type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux"}, "cacheVariables": {"FIXER_SANITIZERS": "ON"}}
   ],

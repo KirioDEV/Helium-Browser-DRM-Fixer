@@ -208,6 +208,9 @@ def main():
         download_case("cancelled preparation triggers no asset requests", cancelled=True)
         if command([str(helper), "--app-update-trust"]).strip() == b"disabled":
             download_case("unconfigured trust triggers no asset requests", compiled_trust=True)
+        else:
+            download_case("configured trust rejects ephemeral download signer", compiled_trust=True,
+                          expected_requests=sequence[:2])
 
         def verify(name, *, trust=public, expected="1.2.3", accepted=True):
             nonlocal passed
@@ -381,14 +384,14 @@ def main():
         manifest.write_bytes(original_manifest)
         signature.write_bytes(original_signature)
         state = command([str(helper), "--app-update-trust"]).strip()
-        if state == b"disabled":
+        if state in (b"disabled", b"configured"):
             result = subprocess.run([str(helper), "--verify-app-package-configured",
                                      str(manifest), str(signature), str(package), "1.2.3"],
                                     capture_output=True, timeout=15)
             if result.returncode == 0:
-                raise RuntimeError("Unconfigured application trusted a test signing key")
+                raise RuntimeError("Application trusted an unrelated test signing key")
             passed += 1
-            print("unconfigured app rejects signed updates: passed", flush=True)
+            print("compiled app trust rejects unrelated test signer: passed", flush=True)
 
         repeat = root / "repeat"
         repeat.mkdir()

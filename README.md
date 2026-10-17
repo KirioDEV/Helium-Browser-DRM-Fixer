@@ -294,12 +294,14 @@ RSA-PKCS#1-v1.5 mit SHA-256, RSA-3072/4096 und Exponent 65537.
 
 Der öffentliche Schlüssel wird als DER-SubjectPublicKeyInfo beim Build über
 `-DFIXER_APP_UPDATE_PUBLIC_KEY=/pfad/zum/public.der` fest eingebaut. Ohne diese
-Konfiguration lehnt die native Manifestprüfung signierte Pakete ab. Es gibt keinen
-voreingestellten Release-Schlüssel und keinen Vertrauenstausch über die
-heruntergeladenen Metadaten. Ein neuer privater Release-Schlüssel wurde bisher
-nicht angelegt. Der öffentliche Teil kann mit
-`openssl pkey -in helium-release.pem -pubout -outform DER -out public.der`
-aus einem später eingerichteten privaten Schlüssel abgeleitet werden.
+Konfiguration lehnt die native Manifestprüfung signierte Pakete ab. Presets und
+CI verwenden `keys/app-update-public.der` als festen öffentlichen Release-Schlüssel.
+Sein SHA-256-Fingerabdruck ist
+`37AC29F8AED81ACD34E86683A90E3A7976C79DBF612A847763EC2A40795A6F7F`.
+Bei direkter CMake-Konfiguration ohne Preset die Option ausdrücklich angeben.
+Es gibt keinen Vertrauenstausch über heruntergeladene Metadaten. Der private
+Schlüssel wurde vom Maintainer lokal eingerichtet und bleibt außerhalb des Repos;
+Build und Prüfung benötigen ausschließlich den öffentlichen Teil.
 
 Die native Schnittstelle prüft Signatur, erwartete Version, Plattform und
 Manifeststruktur; `verify_app_package_digest` prüft anschließend Größe und Hash
