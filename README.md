@@ -723,9 +723,10 @@ cmake --install build/release --prefix build/package
 
 Die CI-Datei baut Windows mit MSVC und Linux mit GCC/Clang und stellt
 Build-Artefakte bereit. Sie veröffentlicht keine Releases.
-README und Projekt-/Bibliothekslizenzen sind Pflichtbestandteile der Pakete.
-Die lokal ignorierten Dateien `SECURITY.md` und `THIRD_PARTY.md` werden zusätzlich
-mitinstalliert, wenn sie vorhanden sind; ein frischer CI-Checkout benötigt sie nicht.
+README, Sicherheitsdokumentation, Drittanbieterhinweise und Projekt-/
+Bibliothekslizenzen sind Pflichtbestandteile neuer CMake-Installationspakete.
+`SECURITY.md` und `THIRD_PARTY.md` gehören zum Repository und werden nach
+`share/helium-drm-fixer` mitinstalliert.
 Details zu Sicherheitsgrenzen und noch ausstehenden Browser-Tests stehen in
 [SECURITY.md](SECURITY.md). Bibliotheksquellen und Lizenzhinweise stehen in
 [THIRD_PARTY.md](THIRD_PARTY.md). Widevine selbst wird nicht mitgeliefert.
