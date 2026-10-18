@@ -8,6 +8,8 @@ nicht zum veröffentlichten C++-Paket.
 | --- | --- | --- | --- |
 | nlohmann/json | 3.12.0, SHA-256 in CMakeLists.txt | MIT | https://github.com/nlohmann/json |
 | miniz | 3.1.2, SHA-256 in CMakeLists.txt | MIT | https://github.com/richgel999/miniz |
+| Slint (optionale UI-Vorschau) | 1.18.1, SHA-256 in cmake/SlintGui.cmake | Slint Royalty-free Desktop, Mobile, and Web Applications License 2.0 | https://github.com/slint-ui/slint |
+| Corrosion (nur GUI-Build) | 0.6.1, SHA-256 in cmake/SlintGui.cmake | MIT | https://github.com/corrosion-rs/corrosion |
 | libcurl (Linux) | Systempaket, mindestens 7.85 | curl license | https://curl.se/docs/copyright.html |
 | OpenSSL (Linux) | Systempaket, mindestens 3.0 | Apache-2.0 | https://www.openssl.org/source/license.html |
 | MinGW-Compilerlaufzeiten (Windows-MinGW) | aus der gewählten Toolchain | jeweilige Runtime-Lizenzen mit Ausnahmen | https://www.mingw-w64.org/ und https://gcc.gnu.org/onlinedocs/libstdc++/manual/license.html |
@@ -15,6 +17,11 @@ nicht zum veröffentlichten C++-Paket.
 Windows nutzt WinHTTP, Crypt32, BCrypt und weitere Windows-Systembibliotheken;
 sie werden nicht in das Paket kopiert. Linux-Systembibliotheken werden dynamisch
 gebunden und nicht als eigene Builds ausgeliefert.
+
+Die Slint-Vorschau wird noch nicht in Release-Pakete installiert. Ihr
+`AboutSlint`-Widget ist über das Hilfe-Menü erreichbar. Vor ihrer Auslieferung
+müssen zusätzlich die Lizenztexte der tatsächlich eingebundenen Rust-Abhängigkeiten
+und Compilerlaufzeiten vollständig erfasst und mitgeliefert/eingebettet werden.
 
 CMake installiert diese Drittanbieterhinweise, die Sicherheitsdokumentation,
 README und Projektlizenz sowie die Lizenztexte von miniz und nlohmann/json

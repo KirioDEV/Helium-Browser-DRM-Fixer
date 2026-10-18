@@ -1,5 +1,9 @@
 # Helium DRM Fixer (C++20)
 
+Eine erste optionale Slint-Oberfläche wird entwickelt:
+[GUI bauen und testen](ui/README.md). Die veröffentlichten Downloads sind
+weiterhin die CLI-Ausgabe.
+
 Konsolenprogramm für Windows 11 x64 und native Linux-x86_64-Installationen.
 Es beschafft Widevine aus dem Google-Komponentenupdate, prüft SHA-256 und
 CRX3-Signaturen und installiert das CDM mit Backup und Wiederherstellung.

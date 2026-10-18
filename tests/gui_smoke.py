@@ -1,0 +1,57 @@
+"""Open the real GUI, read an isolated missing-CDM status, and close it."""
+
+import os
+import shutil
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+from cli_integration import snapshot, source
+
+
+def main():
+    executable = Path(sys.argv[1]).resolve()
+    with tempfile.TemporaryDirectory(prefix="helium-gui-") as temporary:
+        root = Path(temporary)
+        environment = {key.upper(): value for key, value in os.environ.items()}
+        for name in ("LOCALAPPDATA", "USERPROFILE", "HOME", "XDG_CONFIG_HOME",
+                     "XDG_CACHE_HOME", "APPDATA", "ProgramFiles", "ProgramFiles(x86)"):
+            directory = root / name.lower()
+            directory.mkdir()
+            environment[name.upper()] = str(directory)
+        environment["PROGRAMW6432"] = environment["PROGRAMFILES"]
+        if sys.platform == "win32":
+            from windows_portable import check_notices, imports
+            dependencies = imports(executable)
+            forbidden = {name for name in dependencies if
+                         name.startswith(("slint", "qt", "libstdc++", "libgcc", "libwinpthread", "vcruntime", "msvcp"))}
+            if forbidden:
+                raise RuntimeError(f"GUI requires adjacent runtime DLLs: {forbidden}")
+            check_notices(executable)
+            isolated = root / executable.name
+            shutil.copyfile(executable, isolated)
+            executable = isolated
+            environment["PATH"] = str(Path(os.environ["SystemRoot"]) / "System32")
+            app = Path(environment["LOCALAPPDATA"]) / "imput/Helium/Application"
+            (app / "1.0.0.0").mkdir(parents=True)
+            fixture = source(root / "synthetic", "1.2.3.4")
+            pe = bytearray((fixture / "widevinecdm.dll").read_bytes())
+            pe[87] = 0
+            (app / "chrome.exe").write_bytes(pe)
+        else:
+            profile = Path(environment["XDG_CONFIG_HOME"]) / "net.imput.helium"
+            profile.mkdir()
+            (profile / "Local State").write_text("{}", encoding="utf-8")
+        before = snapshot(root)
+        result = subprocess.run([str(executable), "--smoke-test"], env=environment,
+                                cwd=root, capture_output=True, timeout=35)
+        if result.returncode:
+            raise RuntimeError(f"GUI failed: {result.returncode}: {result.stderr!r}")
+        if snapshot(root) != before:
+            raise RuntimeError("GUI inspection changed the isolated fixture")
+    print("GUI startup, asynchronous local inspection and clean exit passed")
+
+
+if __name__ == "__main__":
+    main()

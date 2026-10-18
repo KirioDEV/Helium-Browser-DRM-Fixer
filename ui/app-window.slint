@@ -1,0 +1,168 @@
+import { Button, LineEdit, VerticalBox, HorizontalBox, Spinner, AboutSlint, Palette } from "std-widgets.slint";
+
+export component AppWindow inherits Window {
+    title: "Helium DRM Fixer";
+    preferred-width: 760px;
+    preferred-height: 720px;
+    min-width: 640px;
+    min-height: 660px;
+    background: root.dark ? #11141c : #f3f5fa;
+    default-font-family: "Segoe UI";
+    default-font-size: 14px;
+
+    in-out property <bool> dark: true;
+    in property <bool> busy;
+    in property <bool> can-install;
+    in property <bool> can-restore;
+    in-out property <string> target-path;
+    in property <string> status-title: "Installation prüfen";
+    in property <string> status-detail: "Der lokale Status wird gelesen.";
+    in property <string> phase;
+    in property <string> app-version;
+    private property <int> confirmation: 0;
+    private property <bool> about-open: false;
+    private property <color> ink: root.dark ? #edf0fa : #172033;
+    private property <color> muted: root.dark ? #a6afc3 : #58657b;
+    private property <color> panel: root.dark ? #1b2030 : #ffffff;
+
+    callback inspect();
+    callback install();
+    callback restore();
+    callback cancel();
+    callback target-edited();
+
+    init => { Palette.color-scheme = root.dark ? ColorScheme.dark : ColorScheme.light; }
+    changed dark => { Palette.color-scheme = root.dark ? ColorScheme.dark : ColorScheme.light; }
+
+    MenuBar {
+        Menu {
+            title: "Hilfe";
+            MenuItem {
+                title: "Über Helium DRM Fixer";
+                activated => { root.about-open = !root.about-open; }
+            }
+        }
+    }
+
+    VerticalBox {
+        padding: 28px;
+        spacing: 18px;
+        HorizontalBox {
+            VerticalBox {
+                padding: 0px;
+                spacing: 4px;
+                Text { text: "HELIUM DRM FIXER"; color: #8e9dff; font-size: 12px; font-weight: 700; }
+                Text { text: "Streaming vorbereiten."; color: root.ink; font-size: 30px; font-weight: 700; }
+            }
+            Button {
+                text: root.dark ? "Hell" : "Dunkel";
+                max-width: 88px;
+                height: 36px;
+                horizontal-stretch: 0;
+                clicked => { root.dark = !root.dark; }
+            }
+        }
+
+        Rectangle {
+            background: root.panel;
+            border-radius: 16px;
+            VerticalBox {
+                padding: 22px;
+                spacing: 12px;
+                Text { text: "WIDEVINE"; color: root.muted; font-size: 12px; font-weight: 600; }
+                Text { text: root.status-title; color: root.ink; font-size: 24px; font-weight: 600; wrap: word-wrap; }
+                Text { text: root.status-detail; color: root.muted; wrap: word-wrap; }
+            }
+        }
+
+        VerticalBox {
+            padding: 0px;
+            spacing: 8px;
+            Text { text: "Widevine-Zielordner"; color: root.ink; font-weight: 600; }
+            HorizontalBox {
+                padding: 0px;
+                LineEdit {
+                    text <=> root.target-path;
+                    placeholder-text: "Leer lassen für automatische Helium-Erkennung";
+                    enabled: !root.busy && root.confirmation == 0;
+                    edited => { root.target-edited(); }
+                }
+                Button {
+                    text: "Prüfen";
+                    enabled: !root.busy && root.confirmation == 0;
+                    clicked => { root.inspect(); }
+                }
+            }
+            Text { text: "Bei manueller Auswahl den exakten WidevineCdm-Ordner angeben."; color: root.muted; wrap: word-wrap; }
+        }
+
+        if root.confirmation == 0: HorizontalBox {
+            padding: 0px;
+            Button {
+                text: "Widevine installieren";
+                primary: true;
+                enabled: !root.busy && root.can-install;
+                clicked => { root.confirmation = 1; }
+            }
+            Button {
+                text: "Wiederherstellen";
+                enabled: !root.busy && root.can-restore;
+                clicked => { root.confirmation = 2; }
+            }
+        }
+
+        if root.confirmation != 0: Rectangle {
+            background: root.panel;
+            border-radius: 12px;
+            VerticalBox {
+                padding: 16px;
+                spacing: 12px;
+                Text {
+                    text: root.confirmation == 1
+                        ? "Widevine von Google prüfen und in den angezeigten Zielordner installieren? Der bisherige Zustand wird gesichert."
+                        : "Den vorherigen Widevine-Zustand im angezeigten Zielordner wiederherstellen?";
+                    color: root.ink;
+                    wrap: word-wrap;
+                }
+                Text { text: "Helium und Chrome müssen vollständig geschlossen sein."; color: root.muted; wrap: word-wrap; }
+                HorizontalBox {
+                    Button {
+                        text: "Bestätigen";
+                        primary: true;
+                        clicked => {
+                            if root.confirmation == 1 { root.install(); }
+                            else { root.restore(); }
+                            root.confirmation = 0;
+                        }
+                    }
+                    Button { text: "Zurück"; clicked => { root.confirmation = 0; } }
+                }
+            }
+        }
+
+        HorizontalBox {
+            padding: 0px;
+            if root.busy: Spinner { }
+            Text { text: root.phase; color: root.muted; wrap: word-wrap; vertical-alignment: center; }
+            if root.busy: Button { text: "Abbrechen"; clicked => { root.cancel(); } }
+        }
+        Rectangle { vertical-stretch: 1; }
+        Text {
+            text: "Widevine ermöglicht geschützte Wiedergabe. HD und die Unterstützung einzelner Streamingdienste sind damit nicht garantiert.";
+            color: root.muted;
+            wrap: word-wrap;
+            font-size: 12px;
+        }
+        HorizontalBox {
+            padding: 0px;
+            Text { text: "Version " + root.app-version + " · UI-Vorschau"; color: root.muted; vertical-alignment: center; }
+            Button {
+                text: "Über";
+                max-width: 88px;
+                horizontal-stretch: 0;
+                clicked => { root.about-open = !root.about-open; }
+            }
+        }
+        if root.about-open: AboutSlint { }
+    }
+}
