@@ -307,12 +307,28 @@ unten rechts ihre App-Version und bei einem Update einen `Aktualisieren`-Knopf
 anzeigen. Installation erfolgt nach einem ausdrücklichen Befehl oder Klick.
 Die vorhandenen CDM-Modi `--check` und `--dry-run` bleiben offline.
 
+Für den ersten vollständigen Update-Test dienen die separat geprüften und
+signierten 0.1.0-Pakete als Ausgangspunkt. Der aktuelle Build 0.1.1 ist das
+Update-Ziel. Nach grünem CI-Lauf dessen Kandidaten neu signieren und nativ
+prüfen; die bisherigen 0.1.0-Dateien unverändert aufbewahren. Erst nach manueller
+Veröffentlichung eines stabilen Releases `v0.1.1` im festgelegten Fork mit ZIP,
+Manifest und Signatur für beide Plattformen kann der Online-Test beginnen.
+In einem separaten Testordner mit der 0.1.0-App `--check-app-update` und dann
+`--update-app` ausführen. `scheduled` ist noch keine Installationsbestätigung:
+den ausgegebenen Job bis `installed` prüfen, danach `--version` (0.1.1).
+Mit `--restore-app` den absoluten Pfad dieser Test-App angeben, den neuen Job
+bis `restored` prüfen und Version 0.1.0 sowie den ursprünglichen EXE-/ELF-Hash
+abgleichen. Nur die alte App im Testordner verwenden, nicht den lokalen neuen
+Entwicklungsbuild. Unter Windows muss sie die eigenständige MSVC-EXE sein.
+Die Linux-Ausgabe bleibt ein Ubuntu-24.04-Paket; ein erfolgreicher Lauf unter
+Debian-WSL ist ein konkretes Testergebnis, keine allgemeine Debian-Freigabe.
+
 Aus einem mit `cmake --install` vorbereiteten Verzeichnis erzeugt das Tool
 `tools/package_app_release.py` die ZIP-Datei und `ZIPNAME.manifest.json`:
 
 ```powershell
 New-Item -ItemType Directory -Path build/release-files -Force
-python tools/package_app_release.py --staging build/package --version 0.1.0 --platform windows-x64 --output build/release-files
+python tools/package_app_release.py --staging build/package --version 0.1.1 --platform windows-x64 --output build/release-files
 ```
 
 Unter Linux das Verzeichnis mit `mkdir -p build/release-files` anlegen und
@@ -341,7 +357,7 @@ und sein Manifest. Nur die äußere Actions-Download-ZIP entpacken; die innere
 App-ZIP unverändert lassen. Zuerst ohne Schlüssel prüfen:
 
 ```sh
-python tools/sign_app_candidate.py --candidate build/release-input/helium-drm-fixer-cpp-0.1.0-windows-x64.zip --check-only
+python tools/sign_app_candidate.py --candidate build/release-input/helium-drm-fixer-cpp-0.1.1-windows-x64.zip --check-only
 ```
 
 Der Check liest beide Plattformformate auch plattformübergreifend, prüft aber
@@ -364,7 +380,7 @@ hinterlassen. Für einen neuen Versuch einen neuen Ausgabepfad verwenden.
 Das fertige Paket mit einer vertrauenswürdigen App derselben Plattform prüfen:
 
 ```sh
-helium_drm_fixer --verify-app-release PFAD/helium-drm-fixer-cpp-0.1.0-linux-x86_64-ubuntu24.04.zip --json
+helium_drm_fixer --verify-app-release PFAD/helium-drm-fixer-cpp-0.1.1-linux-x86_64-ubuntu24.04.zip --json
 ```
 
 Unter Windows entsprechend `.exe` und das Windows-Paket verwenden. Der Befehl
