@@ -77,5 +77,7 @@ die beiden GUI-Übersetzungseinheiten; Slint-Quellen werden nicht verändert.
 
 Slint wird für diese Desktop-App unter der Slint Royalty-free Desktop, Mobile,
 and Web Applications License 2.0 verwendet. Das vorgeschriebene `AboutSlint`-
-Widget ist über „Hilfe → Über Helium DRM Fixer“ erreichbar. Lizenztext:
+Widget ist über das zentrale Settings-Menü unter „Settings → About“ erreichbar.
+Die Oberfläche ist englisch, die Theme-Auswahl liegt unter „Settings → Color theme“.
+Help und About ersetzen den früheren Menüleisten- und Footer-Bereich. Lizenztext:
 https://github.com/slint-ui/slint/blob/v1.18.1/LICENSES/LicenseRef-Slint-Royalty-free-2.0.md

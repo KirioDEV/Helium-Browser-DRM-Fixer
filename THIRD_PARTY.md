@@ -19,7 +19,7 @@ sie werden nicht in das Paket kopiert. Linux-Systembibliotheken werden dynamisch
 gebunden und nicht als eigene Builds ausgeliefert.
 
 Die Slint-Vorschau wird noch nicht in Release-Pakete installiert. Ihr
-`AboutSlint`-Widget ist über das Hilfe-Menü erreichbar. Vor ihrer Auslieferung
+`AboutSlint`-Widget ist über „Settings → About“ erreichbar. Vor ihrer Auslieferung
 müssen zusätzlich die Lizenztexte der tatsächlich eingebundenen Rust-Abhängigkeiten
 und Compilerlaufzeiten vollständig erfasst und mitgeliefert/eingebettet werden.
 

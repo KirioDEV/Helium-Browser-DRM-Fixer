@@ -13,39 +13,39 @@ using fixer::ProgressPhase;
 const char* phase_text(ProgressPhase phase) {
   switch (phase) {
     case ProgressPhase::target_resolved:
-      return "Zielordner geprüft.";
+      return "Destination checked.";
     case ProgressPhase::checking_source:
-      return "Installationsquelle prüfen …";
+      return "Checking installation source…";
     case ProgressPhase::querying_release:
-      return "Widevine-Version bei Google abfragen …";
+      return "Querying Google for Widevine…";
     case ProgressPhase::checking_cache:
-      return "Vorhandenes Paket erneut prüfen …";
+      return "Rechecking cached package…";
     case ProgressPhase::downloading_package:
-      return "Widevine herunterladen und verifizieren …";
+      return "Downloading and verifying Widevine…";
     case ProgressPhase::trusting_local_source:
-      return "Lokale Quelle ausgewählt.";
+      return "Local source selected.";
     case ProgressPhase::source_ready:
-      return "Quelle geprüft.";
+      return "Source verified.";
     case ProgressPhase::preparing:
-      return "Dateien vorbereiten …";
+      return "Preparing files…";
     case ProgressPhase::preserving_previous:
-      return "Bisherigen Zustand sichern …";
+      return "Backing up the current state…";
     case ProgressPhase::installing:
-      return "Widevine installieren …";
+      return "Installing Widevine…";
     case ProgressPhase::verifying_installation:
-      return "Installierte Dateien prüfen …";
+      return "Checking installed files…";
     case ProgressPhase::restoring:
-      return "Vorherigen Zustand wiederherstellen …";
+      return "Restoring the previous state…";
     case ProgressPhase::restore_validated:
-      return "Wiederherstellung geprüft …";
+      return "Restore validated…";
     case ProgressPhase::restore_current_preserved:
-      return "Aktuellen Zustand gesichert …";
+      return "Current state preserved…";
     case ProgressPhase::finalizing_restore:
-      return "Wiederherstellung abschließen …";
+      return "Finalizing restore…";
     case ProgressPhase::completed:
-      return "Vorgang abgeschlossen.";
+      return "Operation completed.";
   }
-  return "Vorgang läuft …";
+  return "Operation in progress…";
 }
 
 void show_status(const slint::ComponentHandle<AppWindow>& ui,
@@ -54,25 +54,21 @@ void show_status(const slint::ComponentHandle<AppWindow>& ui,
   std::string detail = status.detail;
   switch (status.state) {
     case LocalState::missing:
-      title = "Widevine fehlt";
-      detail =
-          "Helium wurde gefunden. Widevine ist in diesem Zielordner noch nicht "
-          "installiert.";
+      title = "Widevine is missing";
+      detail = "Helium detected. Widevine is not installed in this folder.";
       break;
     case LocalState::locally_valid:
       title = "Widevine " + status.version;
-      detail =
-          "Manifest und Bibliothek sind lokal gültig. Die Wiedergabe lässt "
-          "sich im Browser testen.";
+      detail = "Local files are valid. Test playback in your browser.";
       break;
     case LocalState::locally_invalid:
-      title = "Widevine lokal ungültig";
+      title = "Widevine files are invalid";
       break;
     case LocalState::recovery_required:
-      title = "Wiederherstellung erforderlich";
+      title = "Restore required";
       break;
     case LocalState::unavailable:
-      title = "Prüfung nicht möglich";
+      title = "Unable to check installation";
       break;
   }
   ui->set_status_title(slint::SharedString(title));
@@ -108,12 +104,12 @@ int run_gui(bool smoke_test) {
     // Active operations always use the exact target shown and confirmed in the
     // UI, even if Helium updates after detection.
     if (job != Job::inspect && options.target.empty()) {
-      ui->set_phase("Bitte zuerst den Zielordner prüfen.");
+      ui->set_phase("Check the destination folder first.");
       return;
     }
     ui->set_busy(true);
-    ui->set_phase(job == Job::inspect ? "Lokalen Status lesen …"
-                                      : "Vorgang starten …");
+    ui->set_phase(job == Job::inspect ? "Reading local status…"
+                                      : "Starting operation…");
     try {
       worker = std::jthread([weak, options, job, smoke_test, &smoke_result,
                              &smoke_inspections] {
@@ -128,18 +124,16 @@ int run_gui(bool smoke_test) {
                       (*window)->set_phase(slint::SharedString(text));
                   });
                 });
-            message =
-                options.restore
-                    ? "Vorheriger Zustand wiederhergestellt. Helium kann "
-                      "gestartet werden."
-                    : "Widevine installiert. Helium kann gestartet werden.";
+            message = options.restore
+                          ? "Previous state restored. You can start Helium."
+                          : "Widevine installed. You can start Helium.";
           }
         } catch (const fixer::Error& error) {
           message = error.code == fixer::Code::cancelled
-                        ? "Vorgang abgebrochen. Lokalen Status erneut prüfen."
-                        : "Fehler: " + std::string(error.what());
+                        ? "Operation cancelled. Check the local status again."
+                        : "Error: " + std::string(error.what());
         } catch (const std::exception& error) {
-          message = "Fehler: " + std::string(error.what());
+          message = "Error: " + std::string(error.what());
         }
         // Refresh after success or failure, including completed rollback. The
         // cancellation flag must not prevent this final read-only inspection.
@@ -161,10 +155,11 @@ int run_gui(bool smoke_test) {
                 (*window)->invoke_inspect();
                 return;
               }
-              bool passed = status.state == LocalState::missing &&
-                            !status.target.empty() &&
-                            (*window)->get_status_title() == "Widevine fehlt" &&
-                            (*window)->get_can_install();
+              bool passed =
+                  status.state == LocalState::missing &&
+                  !status.target.empty() &&
+                  (*window)->get_status_title() == "Widevine is missing" &&
+                  (*window)->get_can_install();
               (*window)->invoke_target_edited();
               passed = passed && !(*window)->get_can_install() &&
                        !(*window)->get_can_restore();
@@ -183,9 +178,8 @@ int run_gui(bool smoke_test) {
       });
     } catch (const std::exception& error) {
       ui->set_busy(false);
-      ui->set_phase(
-          slint::SharedString("Vorgang konnte nicht gestartet werden: " +
-                              std::string(error.what())));
+      ui->set_phase(slint::SharedString("Unable to start operation: " +
+                                        std::string(error.what())));
     }
   };
 
@@ -195,18 +189,17 @@ int run_gui(bool smoke_test) {
   ui->on_target_edited([&] {
     ui->set_can_install(false);
     ui->set_can_restore(false);
-    ui->set_phase("Ziel geändert. Bitte vor einer Änderung erneut prüfen.");
+    ui->set_phase("Destination changed. Check it before making changes.");
   });
   ui->on_cancel([&] {
     fixer::cancelled.store(true);
     ui->set_phase(
-        "Abbruch angefordert. Eine laufende Wiederherstellung wird sicher "
-        "abgeschlossen.");
+        "Cancellation requested. Any ongoing recovery will finish safely.");
   });
   ui->window().on_close_requested([&] {
     if (ui->get_busy()) {
       ui->set_phase(
-          "Bitte zuerst abbrechen und das Ende des Vorgangs abwarten.");
+          "Cancel the operation and wait for it to finish before closing.");
       return slint::CloseRequestResponse::KeepWindowShown;
     }
     return slint::CloseRequestResponse::HideWindow;

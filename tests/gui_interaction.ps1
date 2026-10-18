@@ -4,9 +4,9 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 $preview = Start-Process -FilePath $Application -PassThru -WindowStyle Hidden
-$checkLabel = "Pr$([char]0xFC)fen"
-$confirmLabel = "Best$([char]0xE4)tigen"
-$backLabel = "Zur$([char]0xFC)ck"
+$checkLabel = 'Check'
+$confirmLabel = 'Confirm'
+$backLabel = 'Cancel'
 
 function Assert-Running {
     $preview.Refresh()
@@ -51,11 +51,17 @@ try {
     # Leave enough event-loop turns between joins to exercise the pthread cache.
     for ($index = 0; $index -lt 5; $index++) { Click-Button $checkLabel }
     for ($index = 0; $index -lt 2; $index++) {
-        Click-Button 'Widevine installieren'
+        Click-Button 'Install Widevine'
         if ($null -eq (Find-Button $confirmLabel)) { throw 'Install confirmation missing' }
         Click-Button $backLabel
     }
-    Click-Button 'Wiederherstellen'
+    Click-Button 'Settings'
+    Click-Button 'Help'
+    Click-Button 'Back'
+    Click-Button 'About'
+    Click-Button 'Back'
+    Click-Button 'Back'
+    Click-Button 'Restore'
     # The surrounding Python fixture has no managed backup. This must show an
     # error, keep the window usable and leave every fixture file unchanged.
     Click-Button $confirmLabel
