@@ -95,6 +95,7 @@ int run_gui(bool smoke_test) {
   const slint::ComponentWeakHandle<AppWindow> weak(ui);
   std::jthread worker;
   int smoke_result = 1;
+  int smoke_inspections = 0;
   ui->set_app_version(FIXER_VERSION);
 
   auto start = [&](Job job) {
@@ -114,7 +115,8 @@ int run_gui(bool smoke_test) {
     ui->set_phase(job == Job::inspect ? "Lokalen Status lesen …"
                                       : "Vorgang starten …");
     try {
-      worker = std::jthread([weak, options, job, smoke_test, &smoke_result] {
+      worker = std::jthread([weak, options, job, smoke_test, &smoke_result,
+                             &smoke_inspections] {
         std::string message;
         try {
           if (job != Job::inspect) {
@@ -149,12 +151,16 @@ int run_gui(bool smoke_test) {
           status.detail = error.what();
         }
         slint::invoke_from_event_loop([weak, status, message, smoke_test, job,
-                                       &smoke_result] {
+                                       &smoke_result, &smoke_inspections] {
           if (auto window = weak.lock()) {
             show_status(*window, status);
             (*window)->set_phase(slint::SharedString(message));
             (*window)->set_busy(false);
             if (smoke_test && job == Job::inspect) {
+              if (++smoke_inspections < 4) {
+                (*window)->invoke_inspect();
+                return;
+              }
               bool passed = status.state == LocalState::missing &&
                             !status.target.empty() &&
                             (*window)->get_status_title() == "Widevine fehlt" &&

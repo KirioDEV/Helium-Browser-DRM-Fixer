@@ -57,11 +57,19 @@ Fenstertest benötigt eine grafische Sitzung, in CI beispielsweise Xvfb.
   wird die EXE ohne Nachbar-DLLs und nur mit System32 im PATH gestartet.
   Außerdem werden die Sperre nach einer Zieländerung, der Schließschutz bei
   laufender Arbeit und das Abbruchsignal geprüft.
+  Unter Windows betätigt `gui_interaction.ps1` die echten Schaltflächen über
+  UI Automation: wiederholtes Prüfen, Installationsbestätigung mit Zurück sowie
+  Restore ohne Backup. Die vollständige Testverzeichnis-Prüfung bleibt aktiv.
 
 Die Windows-GUI wird statisch gelinkt. Die verbleibenden Windows-System-DLLs
 werden vom Betriebssystem bereitgestellt. Eine erfolgreiche lokale Prüfung ist
 noch kein Nachweis für alle Windows-11-Systeme; ein Test auf sauberem Windows
 bleibt vor der Freigabe erforderlich. Linux nutzt weiterhin Systembibliotheken.
+
+Die statische MinGW-GUI verwendet explizit UCRT (`-mcrtdll=ucrt`). Gemischte
+MSVCRT-/UCRT-Allocatorimporte führten beim Join beendeter Arbeitsthreads zu
+Heap-Beschädigung. Der Windows-Test lehnt einen direkten MSVCRT-Import deshalb
+ab und prüft zusätzlich echte Button-Interaktionen nach dem Fensterstart.
 
 Slint 1.18.1 versieht unter Windows einige statische Vtable-Zugriffe mit
 DLL-Import-Markierungen. `slint-static.hpp` korrigiert diese Markierung nur für

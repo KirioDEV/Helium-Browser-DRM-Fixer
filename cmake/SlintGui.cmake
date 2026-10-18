@@ -45,10 +45,12 @@ if(MSVC)
     target_link_options(helium_drm_fixer_gui PRIVATE /ENTRY:mainCRTStartup)
 elseif(MINGW)
     target_compile_options(helium_drm_fixer_gui PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:-include${CMAKE_SOURCE_DIR}/ui/slint-static.hpp>")
-    target_link_options(helium_drm_fixer_gui PRIVATE -static -static-libgcc -static-libstdc++)
-    # Resolve circular references between Rust's MSVCRT target and the bundled
-    # MinGW pthread/CRT archives; UCRT itself is supplied by Windows 11.
+    target_compile_options(helium_drm_fixer_gui PRIVATE "$<$<COMPILE_LANGUAGE:CXX>:-mcrtdll=ucrt>")
+    target_link_options(helium_drm_fixer_gui PRIVATE -mcrtdll=ucrt -static -static-libgcc -static-libstdc++)
+    # Use one allocator family throughout the static MinGW runtime. Resolving
+    # malloc/free from MSVCRT but realloc from UCRT corrupts pthread's cache.
+    # UCRT itself is supplied by Windows 11.
     target_link_libraries(helium_drm_fixer_gui PRIVATE
-        "-Wl,--start-group" mingw32 mingwex msvcrt pthread ucrt "-Wl,--end-group")
+        "-Wl,--start-group" mingw32 mingwex pthread ucrt "-Wl,--end-group")
 endif()
 # This prototype is deliberately not installed into signed app-update packages.

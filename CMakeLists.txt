@@ -111,7 +111,7 @@ if(BUILD_TESTING)
         if(TARGET helium_drm_fixer_gui)
             add_test(NAME gui_readonly_startup COMMAND "${Python3_EXECUTABLE}"
                 "${CMAKE_SOURCE_DIR}/tests/gui_smoke.py" "$<TARGET_FILE:helium_drm_fixer_gui>")
-            set_tests_properties(gui_readonly_startup PROPERTIES TIMEOUT 45)
+            set_tests_properties(gui_readonly_startup PROPERTIES TIMEOUT 85)
         endif()
         if(WIN32)
             add_test(NAME windows_embedded_licenses COMMAND "${Python3_EXECUTABLE}"
