@@ -79,5 +79,8 @@ Slint wird für diese Desktop-App unter der Slint Royalty-free Desktop, Mobile,
 and Web Applications License 2.0 verwendet. Das vorgeschriebene `AboutSlint`-
 Widget ist über das zentrale Settings-Menü unter „Settings → About“ erreichbar.
 Die Oberfläche ist englisch, die Theme-Auswahl liegt unter „Settings → Color theme“.
+Das Fenster hat eine feste Größe von 640 × 560 logischen Pixeln. Die
+Installationsbestätigung bleibt dabei ohne Scrollen sichtbar. Die Settings-Zeile
+und das AboutSlint-Widget sind kompakt begrenzt.
 Help und About ersetzen den früheren Menüleisten- und Footer-Bereich. Lizenztext:
 https://github.com/slint-ui/slint/blob/v1.18.1/LICENSES/LicenseRef-Slint-Royalty-free-2.0.md

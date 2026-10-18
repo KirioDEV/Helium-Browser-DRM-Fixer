@@ -3,9 +3,11 @@ import { Button, LineEdit, VerticalBox, HorizontalBox, ScrollView, ComboBox, Spi
 export component AppWindow inherits Window {
     title: "Helium DRM Fixer";
     preferred-width: 640px;
-    preferred-height: 480px;
-    min-width: 540px;
-    min-height: 440px;
+    preferred-height: 560px;
+    min-width: 640px;
+    max-width: 640px;
+    min-height: 560px;
+    max-height: 560px;
     background: root.dark ? #11141c : #f3f5fa;
     default-font-family: "Segoe UI";
     default-font-size: 14px;
@@ -14,6 +16,7 @@ export component AppWindow inherits Window {
     in property <bool> busy;
     in property <bool> can-install;
     in property <bool> can-restore;
+    in property <bool> status-valid;
     in-out property <string> target-path;
     in property <string> status-title: "Checking installation";
     in property <string> status-detail: "Reading the local Widevine status.";
@@ -62,10 +65,17 @@ export component AppWindow inherits Window {
                 if root.page == 0: VerticalBox {
                     padding: 0px; spacing: 14px;
                     Rectangle {
-                        background: root.panel; border-radius: 12px;
+                        background: root.status-valid ? (root.dark ? #142b24 : #edf9f1) : root.panel;
+                        border-radius: 12px;
+                        border-width: root.status-valid ? 1px : 0px;
+                        border-color: root.dark ? #3d946e : #78b990;
                         VerticalBox {
                             padding: 16px; spacing: 7px;
-                            Text { text: "WIDEVINE"; color: root.muted; font-size: 11px; font-weight: 600; }
+                            Text {
+                                text: root.status-valid ? "WIDEVINE · INSTALLED" : "WIDEVINE";
+                                color: root.status-valid ? (root.dark ? #8fdbb4 : #226640) : root.muted;
+                                font-size: 11px; font-weight: 600;
+                            }
                             Text { text: root.status-title; color: root.ink; font-size: 22px; font-weight: 600; wrap: word-wrap; }
                             Text { text: root.status-detail; color: root.muted; wrap: word-wrap; }
                         }
@@ -127,23 +137,33 @@ export component AppWindow inherits Window {
                     Text { text: "HD playback and support for individual streaming services are not guaranteed."; color: root.muted; wrap: word-wrap; font-size: 12px; }
                 }
                 if root.page == 1: VerticalBox {
-                    padding: 0px; spacing: 16px;
+                    padding: 0px; spacing: 12px;
+                    alignment: start;
                     Rectangle {
-                        background: root.panel; border-radius: 12px;
+                        background: root.panel; border-radius: 10px;
+                        height: 56px;
+                        vertical-stretch: 0;
                         HorizontalBox {
-                            padding: 16px;
+                            padding: 12px;
                             Text { text: "Color theme"; color: root.ink; vertical-alignment: center; }
                             ComboBox {
                                 accessible-label: "Color theme";
                                 model: ["Dark", "Light"];
                                 current-index: root.dark ? 0 : 1;
-                                max-width: 180px;
+                                width: 132px;
+                                height: 32px;
+                                horizontal-stretch: 0;
+                                vertical-stretch: 0;
                                 selected(value) => { root.dark = self.current-index == 0; }
                             }
                         }
                     }
-                    Button { text: "Help"; clicked => { root.page = 2; } }
-                    Button { text: "About"; clicked => { root.page = 3; } }
+                    HorizontalBox {
+                        padding: 0px; spacing: 8px;
+                        alignment: start;
+                        Button { text: "Help"; width: 96px; height: 32px; clicked => { root.page = 2; } }
+                        Button { text: "About"; width: 96px; height: 32px; clicked => { root.page = 3; } }
+                    }
                 }
                 if root.page == 2: VerticalBox {
                     padding: 0px; spacing: 14px;
@@ -160,13 +180,25 @@ export component AppWindow inherits Window {
                 }
                 if root.page == 3: VerticalBox {
                     padding: 0px; spacing: 14px;
-                    Text { text: "Helium DRM Fixer"; color: root.ink; font-size: 20px; font-weight: 600; }
+                    alignment: start;
+                    vertical-stretch: 0;
+                    Text { text: "Helium DRM Fixer"; color: root.ink; font-size: 20px; font-weight: 600; vertical-stretch: 0; }
                     Text {
                         text: "An independent tool to verify and install Widevine with backup and restore. Not an official Helium or Google application.";
-                        color: root.muted; wrap: word-wrap;
+                        color: root.muted; wrap: word-wrap; vertical-stretch: 0;
                     }
-                    AboutSlint { }
                 }
+            }
+        }
+        if root.page == 3: HorizontalBox {
+            padding: 0px;
+            alignment: center;
+            vertical-stretch: 0;
+            AboutSlint {
+                width: 280px;
+                height: 112px;
+                horizontal-stretch: 0;
+                vertical-stretch: 0;
             }
         }
         Text { text: "Version " + root.app-version + " · UI preview"; color: root.muted; font-size: 12px; }

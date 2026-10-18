@@ -73,6 +73,7 @@ void show_status(const slint::ComponentHandle<AppWindow>& ui,
   }
   ui->set_status_title(slint::SharedString(title));
   ui->set_status_detail(slint::SharedString(detail));
+  ui->set_status_valid(status.state == LocalState::locally_valid);
   ui->set_can_install(status.state == LocalState::missing ||
                       status.state == LocalState::locally_valid ||
                       status.state == LocalState::locally_invalid);
@@ -108,6 +109,7 @@ int run_gui(bool smoke_test) {
       return;
     }
     ui->set_busy(true);
+    ui->set_status_valid(false);
     ui->set_phase(job == Job::inspect ? "Reading local status…"
                                       : "Starting operation…");
     try {
@@ -187,6 +189,7 @@ int run_gui(bool smoke_test) {
   ui->on_install([&] { start(Job::install); });
   ui->on_restore([&] { start(Job::restore); });
   ui->on_target_edited([&] {
+    ui->set_status_valid(false);
     ui->set_can_install(false);
     ui->set_can_restore(false);
     ui->set_phase("Destination changed. Check it before making changes.");
