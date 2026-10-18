@@ -358,7 +358,9 @@ unsignierter Kandidat.
 
 Für CI-Artefakte ist `tools/sign_app_candidate.py` der bevorzugte Signierweg.
 Alternativ signiert der Actions-Workflow **Sign app release** beide Plattformen
-nach jedem erfolgreichen **Build and test C++**-Push-Lauf auf `main` automatisch.
+nach erfolgreichen Windows-/GCC-/Clang-Jobs eines **Build and test C++**-Push-Laufs
+auf `main` automatisch. Der Aufruf erfolgt über `needs` und `workflow_call`
+im selben CI-Lauf; es wird kein separater `workflow_run`-Start benötigt.
 Einmalig das Environment `release-signing` anlegen,
 auf `main` beschränken und dort die Environment-Secrets `RELEASE_SIGNING_KEY_PEM`
 (vollständige bestehende verschlüsselte PEM-Datei) und
@@ -368,8 +370,12 @@ Erforderliche Reviewer halten auch automatisch gestartete Jobs bis zur Freigabe
 an. Für einen Ablauf ohne manuelle Klicks diese Reviewer-Regel im Environment
 entfernen; Branchbeschränkung und Secrets beibehalten.
 
-Der automatische Ablauf verwendet genau den Commit und die Artefakte des
-auslösenden Builds, auch wenn `main` inzwischen weitergelaufen ist. Als Fallback
+Der automatische Ablauf verwendet genau den Commit und die Artefakte desselben
+Builds, auch wenn `main` inzwischen weitergelaufen ist. Vor dem Signieren werden
+die abgeschlossenen erfolgreichen Jobs für Windows, GCC und Clang zusätzlich
+über die API geprüft. Der Gesamtworkflow läuft zu diesem Zeitpunkt noch;
+nur seine eigene Run-ID darf diese Prüfung für einen laufenden Build nutzen.
+Als Fallback
 bleibt der manuelle Start auf `main` mit `build_run_id` erhalten; dabei muss der
 gewählte Build zum selben Commit wie der manuell gestartete Workflow gehören.
 Pull Requests, andere Repositories, Branches, Workflows und fehlgeschlagene
@@ -378,7 +384,9 @@ dem bestehenden Schlüssel signiert und gegen `keys/app-update-public.der`
 verifiziert. Das Actions-Artefakt `signed-app-release` enthält die sechs
 Update-Dateien (ZIP, Manifest und Signatur je Plattform), die bytegleiche
 Standalone-Datei `helium_drm_fixer.exe` aus dem Windows-Paket und `release-notes.md`.
-Die EXE liegt zusätzlich im Artefakt `windows-x64-standalone-exe` dieses Laufs.
+Die EXE liegt zusätzlich im Artefakt `signed-windows-x64-standalone-exe` dieses
+Laufs. Die signierten Artefakte erscheinen jetzt direkt im Build-Lauf unter
+`sign-release / sign`; die gesamte CI ist erst nach diesem Job abgeschlossen.
 Für die Veröffentlichung alle sieben Nutzdateien anhängen und den Inhalt von
 `release-notes.md` als Beschreibung verwenden: Windows-Download zuerst,
 Linux-/Update-Dateien darunter aufklappbar. Der README-Downloadlink setzt voraus,
@@ -386,10 +394,10 @@ dass `helium_drm_fixer.exe` im neuesten stabilen Release vorhanden ist.
 Der Workflow führt keine Programme
 aus diesen Paketen aus, hat keine Schreibrechte auf Releases und veröffentlicht
 nichts. Die native Offline-Prüfung vor manueller Veröffentlichung bleibt bestehen.
-Normale Build-/PR-Läufe erhalten keine Signier-Secrets. Details zu
+Windows-/GCC-/Clang-Jobs und PR-Läufe erhalten keine Signier-Secrets. Details zu
 [Environment-Secrets und Schutzregeln](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments).
-Der automatische Start verwendet
-[`workflow_run`](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run).
+Der automatische Aufruf verwendet einen
+[wiederverwendbaren Workflow](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows).
 
 Die Actions-Artefakte `windows-x64-unsigned-update-candidate` und
 `linux-x86_64-unsigned-update-candidate` enthalten bereits das fertige App-ZIP

@@ -23,18 +23,33 @@ INPUT = ROOT / "build" / "signing-input"
 OUTPUT = ROOT / "build" / "signed-release"
 
 
-def validate_run(run, run_id, repository, sha):
+def validate_run(run, run_id, repository, sha, current_run_id=None):
     require(repository == REPOSITORY, "Signing is restricted to the release repository")
     require(re.fullmatch(r"[1-9][0-9]*", run_id) is not None, "Invalid build run ID")
     require(re.fullmatch(r"[0-9a-f]{40}", sha) is not None, "Invalid source commit")
-    require(type(run.get("id")) is int and str(run["id"]) == run_id and
-            run.get("status") == "completed" and run.get("conclusion") == "success" and
+    completed = run.get("status") == "completed" and run.get("conclusion") == "success"
+    # A reusable signing job is part of the still-running build workflow.
+    # Only this exact run may use that path; all build jobs are checked below.
+    current = (run_id == current_run_id and run.get("status") == "in_progress" and
+               run.get("conclusion") is None)
+    require(type(run.get("id")) is int and str(run["id"]) == run_id and (completed or current) and
             run.get("event") == "push" and run.get("head_branch") == "main" and
             run.get("head_sha") == sha and
             run.get("path") == ".github/workflows/build.yml" and
             run.get("repository", {}).get("full_name") == repository and
             run.get("head_repository", {}).get("full_name") == repository,
             "Expected a successful main push build from this exact repository and commit")
+
+
+def validate_build_jobs(value):
+    jobs = value.get("jobs", [])
+    require(type(value.get("total_count")) is int and value["total_count"] == len(jobs),
+            "Incomplete build job metadata")
+    for name in ("windows", "linux (gcc)", "linux (clang)"):
+        matching = [job for job in jobs if job.get("name") == name]
+        require(len(matching) == 1 and matching[0].get("status") == "completed" and
+                matching[0].get("conclusion") == "success",
+                "All Windows/GCC/Clang jobs must have completed successfully before signing")
 
 
 def candidates(directory, version):
@@ -70,7 +85,13 @@ def download():
     require(os.environ.get("GITHUB_REF") == "refs/heads/main", "Select main to sign releases")
     response = subprocess.run(["gh", "api", f"repos/{repository}/actions/runs/{run_id}"],
                               check=True, capture_output=True, timeout=60)
-    validate_run(json.loads(response.stdout), run_id, repository, sha)
+    run = json.loads(response.stdout)
+    validate_run(run, run_id, repository, sha, os.environ.get("GITHUB_RUN_ID"))
+    if run.get("status") != "completed":
+        response = subprocess.run(["gh", "api",
+                                   f"repos/{repository}/actions/runs/{run_id}/jobs?filter=latest&per_page=100"],
+                                  check=True, capture_output=True, timeout=60)
+        validate_build_jobs(json.loads(response.stdout))
     INPUT.parent.mkdir(exist_ok=True)
     INPUT.mkdir(mode=0o700)
     for platform, artifact in ARTIFACTS.items():
@@ -78,7 +99,7 @@ def download():
                         "--name", artifact, "--dir", str(INPUT / platform)],
                        check=True, timeout=180)
     candidates(INPUT, project_version())
-    print(f"Checked both candidates from successful build {run_id} at {sha}")
+    print(f"Checked both candidates after successful Windows/GCC/Clang jobs in build {run_id} at {sha}")
 
 
 def sign(openssl_path="openssl"):

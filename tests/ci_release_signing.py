@@ -20,6 +20,44 @@ from package_app_release import DOMAIN, SHARE, build_release
 
 
 class ProvenanceTests(unittest.TestCase):
+    def test_current_run_requires_successful_build_jobs(self):
+        sha = "a" * 40
+        repository = {"full_name": signing.REPOSITORY}
+        run = {"id": 123, "status": "in_progress", "conclusion": None, "event": "push",
+               "head_branch": "main", "head_sha": sha, "path": ".github/workflows/build.yml",
+               "repository": repository, "head_repository": repository}
+        jobs = {"total_count": 3, "jobs": [
+            {"name": name, "status": "completed", "conclusion": "success"}
+            for name in ("windows", "linux (gcc)", "linux (clang)")]}
+        with self.assertRaises(ValueError):
+            signing.validate_run(run, "123", signing.REPOSITORY, sha)
+        with self.assertRaises(ValueError):
+            signing.validate_run(run, "123", signing.REPOSITORY, sha, "124")
+        signing.validate_run(run, "123", signing.REPOSITORY, sha, "123")
+        signing.validate_build_jobs(jobs)
+        environment = {"BUILD_RUN_ID": "123", "BUILD_SOURCE_SHA": sha, "GITHUB_RUN_ID": "123",
+                       "GITHUB_REF": "refs/heads/main", "GITHUB_REPOSITORY": signing.REPOSITORY}
+        with tempfile.TemporaryDirectory(prefix="helium-ci-current-run-") as temporary, \
+                patch.dict(os.environ, environment), patch.object(signing, "INPUT", Path(temporary) / "input"), \
+                patch.object(signing.subprocess, "run") as command, patch.object(signing, "candidates"), \
+                patch.object(signing, "project_version", return_value="0.1.1"):
+            command.side_effect = [SimpleNamespace(stdout=json.dumps(run)), SimpleNamespace(stdout=json.dumps(jobs)),
+                                   SimpleNamespace(), SimpleNamespace()]
+            signing.download()
+            self.assertIn("/jobs?filter=latest", command.call_args_list[1].args[0][-1])
+            self.assertEqual(command.call_count, 4)
+        for label, changed in (("missing Clang", {"total_count": 2, "jobs": jobs["jobs"][:2]}),
+                               ("truncated", dict(jobs, total_count=101)),
+                               ("duplicate", {"total_count": 4, "jobs": jobs["jobs"] + [jobs["jobs"][0]]})):
+            with self.subTest(label=label), self.assertRaises(ValueError):
+                signing.validate_build_jobs(changed)
+        for name in ("windows", "linux (gcc)", "linux (clang)"):
+            for conclusion in ("failure", "cancelled", "skipped", None):
+                changed = copy.deepcopy(jobs)
+                next(job for job in changed["jobs"] if job["name"] == name)["conclusion"] = conclusion
+                with self.subTest(name=name, conclusion=conclusion), self.assertRaises(ValueError):
+                    signing.validate_build_jobs(changed)
+
     def test_download_uses_triggering_build_commit(self):
         # workflow_run's GITHUB_SHA may already point to a newer main commit.
         sha = "a" * 40

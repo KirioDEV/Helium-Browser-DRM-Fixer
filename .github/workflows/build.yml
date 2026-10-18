@@ -6,6 +6,21 @@ on:
 permissions:
   contents: read
 jobs:
+  sign-release:
+    needs: [windows, linux]
+    if: >-
+      github.repository == 'KirioDEV/Helium-Browser-DRM-Fixer' &&
+      github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/sign-release.yml
+    with:
+      build_run_id: ${{ format('{0}', github.run_id) }}
+      build_source_sha: ${{ github.sha }}
+    secrets:
+      RELEASE_SIGNING_KEY_PEM: ${{ secrets.RELEASE_SIGNING_KEY_PEM }}
+      RELEASE_SIGNING_KEY_PASSPHRASE: ${{ secrets.RELEASE_SIGNING_KEY_PASSPHRASE }}
   windows:
     runs-on: windows-2022
     steps:
