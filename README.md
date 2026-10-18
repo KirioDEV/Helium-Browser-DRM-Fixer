@@ -340,7 +340,10 @@ python tools/smoke_app_update.py --verifier PFAD_ZUR_VERTRAUENSWUERDIGEN_APP --b
 
 Für den vollständigen Online-Test `--run` ergänzen und einen neuen Ausgabeordner
 wählen; der Elternordner muss bereits existieren. Unter Windows nur das
-standalone MSVC-Paket als Baseline verwenden. Unter WSL den Testordner im
+standalone MSVC-Paket als Baseline verwenden und einen kurzen Ausgabeordner
+wie `build/smoke-12345678` wählen. Das Skript prüft vor dem ersten Baseline-Start
+das Windows-Pfadbudget einschließlich Staging und Lizenzdateien (240 UTF-16-
+Zeichen). Unter WSL den Testordner im
 Linux-Dateisystem anlegen. Das Tool verlangt genau das erwartete neuere stabile
 Update-Angebot, wartet auf `installed`, prüft Hash und Version und stellt danach
 über den alten geprüften Helfer die Baseline wieder her. Neue Programme werden

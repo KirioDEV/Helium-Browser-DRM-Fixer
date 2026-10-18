@@ -9,7 +9,7 @@ import hashlib
 import io
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import re
 import subprocess
 import sys
@@ -26,6 +26,25 @@ def require(condition, message):
 
 def digest(path):
     return hashlib.sha256(read_regular(path, LIMIT)).hexdigest()
+
+
+def check_windows_paths(directory, file_paths):
+    """Budget the native 240 UTF-16-unit limit, including nested staging files."""
+    directory = PureWindowsPath(directory)
+    identifier = "0" * 32
+    jobs = directory / ".helium-app-update-jobs"
+    staging = jobs / ("app-update-" + identifier + ".partial")
+    job = jobs / ("job-" + identifier)
+    state = directory / ".helium-app-update"
+    paths = [staging / filename for filename in file_paths]
+    paths += [staging / "app-update.manifest.json", staging / "app-update.manifest.sig",
+              job / "update-helper.exe", job / ("decision.json.tmp-" + identifier),
+              job / ("status.json.tmp-" + identifier), state / ("journal.json.tmp-" + identifier),
+              state / ("history-" + identifier + ".json.tmp-" + identifier)]
+    longest = max(len(str(path).encode("utf-16-le")) // 2 for path in paths)
+    require(longest <= 240,
+            f"Windows test paths need {longest} UTF-16 characters (limit 240). "
+            "Choose a shorter --output directory, for example build/smoke-12345678.")
 
 
 class SmokeTest:
@@ -95,6 +114,8 @@ class SmokeTest:
                 "Candidate version must be newer than baseline")
         binary_path = "bin/" + self.target.name
         self.report.update({"baseline": old, "candidate": new})
+        if sys.platform == "win32":
+            check_windows_paths(self.target.parent, new["files"])
         with zipfile.ZipFile(io.BytesIO(old_bytes)) as archive:
             binary = archive.read(binary_path)
         require(hashlib.sha256(binary).hexdigest() == old["files"][binary_path],
@@ -109,7 +130,8 @@ class SmokeTest:
 
     def scheduled_job(self, executable, *arguments):
         entry = self.invoke(executable, *arguments)
-        require(entry["exit_code"] == 0, "Scheduling failed; inspect report.json")
+        detail = entry["stderr"].strip() or entry["stdout"].strip()
+        require(entry["exit_code"] == 0, "Scheduling failed: " + detail + "; inspect report.json")
         jobs = re.findall(r"^Job: (.+)$", entry["stdout"], re.MULTILINE)
         helpers = re.findall(r"^Recovery helper: (.+)$", entry["stdout"], re.MULTILINE)
         require(len(jobs) == len(helpers) == 1, "Missing job/recovery helper output")

@@ -313,7 +313,11 @@ Im bisherigen Projektverlauf bestanden 204 synthetische Paket-/Update-Szenarien
 auf Windows und Linux mit temporären Testschlüsseln. Produktiv signierte
 0.1.0- und 0.1.1-Pakete wurden laut Maintainer-Ausgaben nativ unter Windows und
 Debian-WSL verifiziert. Das Linux-Paket bleibt für Ubuntu 24.04 x86_64 gebaut;
-dies ist keine allgemeine Debian-Freigabe. Ein echter Online-Update-/Restore-
-Durchlauf gegen ein veröffentlichtes Release ist noch nicht bestätigt.
-`tools/smoke_app_update.py` bereitet diesen isolierten Test vor und führt ihn
-mit `--run` aus; seine synthetischen Ablaufprüfungen ersetzen den realen Test nicht.
+dies ist keine allgemeine Debian-Freigabe. Der echte isolierte Online-Test gegen
+das veröffentlichte Release v0.1.1 ist inzwischen für beide Plattformen bestätigt:
+Windows wurde mit `tools/smoke_app_update.py --run` ausgeführt, Debian-WSL durch
+die entsprechende Maintainer-Ausgabe bestätigt. Beide Durchläufe prüfen das
+Update 0.1.0 auf 0.1.1 und die Wiederherstellung der ursprünglichen 0.1.0 mit
+Versions-/Hashvergleich. Unter Windows müssen auch die Staging-Dateipfade im
+240-Zeichen-Budget liegen; das Testskript prüft dieses Budget in UTF-16-Codeunits.
+Die synthetischen Ablaufprüfungen ersetzen diese realen Testläufe nicht.

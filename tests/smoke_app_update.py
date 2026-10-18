@@ -16,10 +16,22 @@ import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 from package_app_release import REPOSITORY
-from smoke_app_update import SmokeTest
+from smoke_app_update import SmokeTest, check_windows_paths
 
 
 class SmokeTests(unittest.TestCase):
+    def test_windows_staging_path_budget(self):
+        files = ["bin/helium_drm_fixer.exe", "share/helium-drm-fixer/licenses/nlohmann-json-MIT.txt"]
+        check_windows_paths(r"C:\hf\smoke-12345678\app", files)
+        # The exact long directory suggested by the first test instructions.
+        directory = (r"C:\Users\DOPAMINKISTE-v2\CLionProjects\helium-drm fixer\build"
+                     r"\app-update-smoke-46890698d12f430f997867fb5d1192fe\app")
+        with self.assertRaisesRegex(ValueError, "245 UTF-16 characters"):
+            check_windows_paths(directory, files)
+        # Non-BMP characters consume two Windows UTF-16 code units each.
+        with self.assertRaisesRegex(ValueError, "shorter --output"):
+            check_windows_paths("C:\\" + "\U0001f680" * 60 + "\\app", files)
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="helium-smoke-runner-")
         self.addCleanup(self.temporary.cleanup)
