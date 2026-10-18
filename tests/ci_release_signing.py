@@ -2,13 +2,17 @@
 
 import argparse
 import copy
+import io
+import json
 import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 from unittest.mock import patch
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 import ci_release_signing as signing
@@ -16,6 +20,25 @@ from package_app_release import DOMAIN, SHARE, build_release
 
 
 class ProvenanceTests(unittest.TestCase):
+    def test_download_uses_triggering_build_commit(self):
+        # workflow_run's GITHUB_SHA may already point to a newer main commit.
+        sha = "a" * 40
+        repository = {"full_name": signing.REPOSITORY}
+        run = {"id": 123, "status": "completed", "conclusion": "success", "event": "push",
+               "head_branch": "main", "head_sha": sha, "path": ".github/workflows/build.yml",
+               "repository": repository, "head_repository": repository}
+        environment = {"BUILD_RUN_ID": "123", "BUILD_SOURCE_SHA": sha,
+                       "GITHUB_SHA": "b" * 40, "GITHUB_REF": "refs/heads/main",
+                       "GITHUB_REPOSITORY": signing.REPOSITORY}
+        with tempfile.TemporaryDirectory(prefix="helium-ci-provenance-") as temporary, \
+                patch.dict(os.environ, environment), patch.object(signing, "INPUT", Path(temporary) / "input"), \
+                patch.object(signing.subprocess, "run", return_value=SimpleNamespace(stdout=json.dumps(run))) as command, \
+                patch.object(signing, "candidates"), patch.object(signing, "project_version", return_value="0.1.1"):
+            signing.download()
+            downloads = [call.args[0] for call in command.call_args_list[1:]]
+            self.assertEqual(len(downloads), 2)
+            self.assertTrue(all(args[:4] == ["gh", "run", "download", "123"] for args in downloads))
+
     def test_run_provenance(self):
         sha = "a" * 40
         repository = {"full_name": signing.REPOSITORY}
@@ -109,7 +132,14 @@ class ProvenanceTests(unittest.TestCase):
                 self.assertTrue(temporary_keys)
                 self.assertTrue(all(not directory.exists() for directory in temporary_keys))
                 files = [path for path in outputs.rglob("*") if path.is_file()]
-                self.assertEqual(len(files), 6)
+                self.assertEqual(len(files), 8)
+                notes = (outputs / "release-notes.md").read_text(encoding="utf-8")
+                self.assertIn("/releases/download/v0.1.1/helium_drm_fixer.exe", notes)
+                self.assertLess(notes.index("herunterladen (.exe)"), notes.index("<details>"))
+                with zipfile.ZipFile(io.BytesIO(next(
+                        data for name, data in originals["windows-x64"].items() if name.endswith(".zip")))) as archive:
+                    self.assertEqual((outputs / "windows-x64" / "helium_drm_fixer.exe").read_bytes(),
+                                     archive.read("bin/helium_drm_fixer.exe"))
                 for platform, original in originals.items():
                     for name, data in original.items():
                         self.assertEqual((outputs / platform / name).read_bytes(), data)

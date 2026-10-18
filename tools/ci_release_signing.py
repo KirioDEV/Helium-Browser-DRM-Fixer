@@ -1,12 +1,14 @@
 """Sign existing successful main CI candidates; never publish or execute them."""
 
 import argparse
+import io
 import json
 import os
 from pathlib import Path
 import re
 import subprocess
 import tempfile
+import zipfile
 
 from package_app_release import REPOSITORY, read_regular
 from sign_app_candidate import inspect_candidate, require, sign_candidate
@@ -62,7 +64,7 @@ def project_version():
 
 def download():
     run_id = os.environ["BUILD_RUN_ID"]
-    repository, sha = os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_SHA"]
+    repository, sha = os.environ["GITHUB_REPOSITORY"], os.environ["BUILD_SOURCE_SHA"]
     require(re.fullmatch(r"[1-9][0-9]*", run_id) is not None, "Invalid build run ID")
     require(repository == REPOSITORY, "Unexpected repository")
     require(os.environ.get("GITHUB_REF") == "refs/heads/main", "Select main to sign releases")
@@ -81,7 +83,8 @@ def download():
 
 def sign(openssl_path="openssl"):
     # Validate both complete inventories before materializing the private key.
-    selected = candidates(INPUT, project_version())
+    version = project_version()
+    selected = candidates(INPUT, version)
     require(not OUTPUT.exists(), "Signed output directory already exists")
     pem = os.environ.pop("RELEASE_SIGNING_KEY_PEM", "")
     require(bool(os.environ.get("RELEASE_SIGNING_KEY_PASSPHRASE")), "Missing passphrase secret")
@@ -103,7 +106,26 @@ def sign(openssl_path="openssl"):
                                password_env="RELEASE_SIGNING_KEY_PASSPHRASE")
     finally:
         os.environ.pop("RELEASE_SIGNING_KEY_PASSPHRASE", None)
-    print("Both candidates signed and signatures verified against the pinned public key. Nothing published.")
+    # Export only the checked Windows program, without executing the payload.
+    # Its manifest hash is already covered by the verified release signature.
+    windows_package = next((OUTPUT / "windows-x64").glob("*.zip"))
+    _, _, package_bytes = inspect_candidate(windows_package)
+    with zipfile.ZipFile(io.BytesIO(package_bytes)) as archive:
+        executable_bytes = archive.read("bin/helium_drm_fixer.exe")
+    with (OUTPUT / "windows-x64" / "helium_drm_fixer.exe").open("xb") as stream:
+        stream.write(executable_bytes)
+    base = f"https://github.com/{REPOSITORY}/releases/download/v{version}"
+    notes = [f"# Helium DRM Fixer {version}", "",
+             f"**[Windows 11 x64 herunterladen (.exe)]({base}/helium_drm_fixer.exe)**", "",
+             "Standalone-Konsolenprogramm mit eingebundenen Laufzeitbibliotheken und Lizenzhinweisen.",
+             "", "<details>", "<summary>Linux, Update-Pakete und Signaturen</summary>", ""]
+    for platform in ARTIFACTS:
+        name = f"helium-drm-fixer-cpp-{version}-{platform}.zip"
+        for suffix in ("", ".manifest.json", ".manifest.sig"):
+            notes.append(f"- [{name}{suffix}]({base}/{name}{suffix})")
+    notes.extend(["", "</details>", ""])
+    (OUTPUT / "release-notes.md").write_text("\n".join(notes), encoding="utf-8")
+    print("Both candidates signed and verified; standalone Windows EXE exported. Nothing published.")
 
 
 def main():

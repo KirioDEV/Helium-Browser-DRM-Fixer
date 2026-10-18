@@ -5,6 +5,12 @@ Es beschafft Widevine aus dem Google-Komponentenupdate, prüft SHA-256 und
 CRX3-Signaturen und installiert das CDM mit Backup und Wiederherstellung.
 Ein unabhängiges Drittanbieterprojekt, keine offizielle Helium-Komponente.
 
+**[Windows 11 x64 herunterladen (.exe)](https://github.com/KirioDEV/Helium-Browser-DRM-Fixer/releases/latest/download/helium_drm_fixer.exe)**
+· [Linux, Update-Pakete und alle Releases](https://github.com/KirioDEV/Helium-Browser-DRM-Fixer/releases)
+
+Die Windows-Ausgabe ist ein Standalone-Konsolenprogramm mit eingebundenen
+Laufzeitbibliotheken und Lizenzhinweisen.
+
 ## Bauen in CLion unter Windows
 
 Dieses Verzeichnis als CMake-Projekt öffnen. C++20 ist bereits eingestellt.
@@ -351,28 +357,39 @@ nicht in das Paket kopiert. Ohne Schlüssel ist die Ausgabe ausdrücklich ein
 unsignierter Kandidat.
 
 Für CI-Artefakte ist `tools/sign_app_candidate.py` der bevorzugte Signierweg.
-Alternativ signiert der manuell gestartete Actions-Workflow **Sign app release**
-beide Plattformen gemeinsam. Einmalig das Environment `release-signing` anlegen,
+Alternativ signiert der Actions-Workflow **Sign app release** beide Plattformen
+nach jedem erfolgreichen **Build and test C++**-Push-Lauf auf `main` automatisch.
+Einmalig das Environment `release-signing` anlegen,
 auf `main` beschränken und dort die Environment-Secrets `RELEASE_SIGNING_KEY_PEM`
 (vollständige bestehende verschlüsselte PEM-Datei) und
 `RELEASE_SIGNING_KEY_PASSPHRASE` (deren Passphrase) hinterlegen. Der private
 Schlüssel wird damit zusätzlich GitHub anvertraut; lokale Sicherung behalten.
-Bei erforderlichen Reviewern muss der alleinige Maintainer eigene Läufe
-freigeben können. Environment-Schutz vor dem ersten Signierlauf konfigurieren.
+Erforderliche Reviewer halten auch automatisch gestartete Jobs bis zur Freigabe
+an. Für einen Ablauf ohne manuelle Klicks diese Reviewer-Regel im Environment
+entfernen; Branchbeschränkung und Secrets beibehalten.
 
-Unter Actions den Workflow auf `main` starten und als `build_run_id` die
-numerische ID eines erfolgreichen **Build and test C++**-Push-Laufs angeben.
-Dieser Lauf muss zum selben Commit wie der gestartete Signierworkflow gehören;
-nach weiteren Änderungen an `main` erst dessen neuen grünen Build verwenden.
+Der automatische Ablauf verwendet genau den Commit und die Artefakte des
+auslösenden Builds, auch wenn `main` inzwischen weitergelaufen ist. Als Fallback
+bleibt der manuelle Start auf `main` mit `build_run_id` erhalten; dabei muss der
+gewählte Build zum selben Commit wie der manuell gestartete Workflow gehören.
 Pull Requests, andere Repositories, Branches, Workflows und fehlgeschlagene
 Builds werden abgelehnt. Beide Pakete werden vollständig vorgeprüft, dann mit
 dem bestehenden Schlüssel signiert und gegen `keys/app-update-public.der`
-verifiziert. Das Actions-Artefakt `signed-app-release` enthält sechs Dateien
-(ZIP, Manifest und Signatur je Plattform). Der Workflow führt keine Programme
+verifiziert. Das Actions-Artefakt `signed-app-release` enthält die sechs
+Update-Dateien (ZIP, Manifest und Signatur je Plattform), die bytegleiche
+Standalone-Datei `helium_drm_fixer.exe` aus dem Windows-Paket und `release-notes.md`.
+Die EXE liegt zusätzlich im Artefakt `windows-x64-standalone-exe` dieses Laufs.
+Für die Veröffentlichung alle sieben Nutzdateien anhängen und den Inhalt von
+`release-notes.md` als Beschreibung verwenden: Windows-Download zuerst,
+Linux-/Update-Dateien darunter aufklappbar. Der README-Downloadlink setzt voraus,
+dass `helium_drm_fixer.exe` im neuesten stabilen Release vorhanden ist.
+Der Workflow führt keine Programme
 aus diesen Paketen aus, hat keine Schreibrechte auf Releases und veröffentlicht
 nichts. Die native Offline-Prüfung vor manueller Veröffentlichung bleibt bestehen.
 Normale Build-/PR-Läufe erhalten keine Signier-Secrets. Details zu
 [Environment-Secrets und Schutzregeln](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments).
+Der automatische Start verwendet
+[`workflow_run`](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run).
 
 Die Actions-Artefakte `windows-x64-unsigned-update-candidate` und
 `linux-x86_64-unsigned-update-candidate` enthalten bereits das fertige App-ZIP
