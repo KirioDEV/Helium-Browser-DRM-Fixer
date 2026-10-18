@@ -329,6 +329,28 @@ Entwicklungsbuild. Unter Windows muss sie die eigenständige MSVC-EXE sein.
 Die Linux-Ausgabe bleibt ein Ubuntu-24.04-Paket; ein erfolgreicher Lauf unter
 Debian-WSL ist ein konkretes Testergebnis, keine allgemeine Debian-Freigabe.
 
+`tools/smoke_app_update.py` automatisiert diesen Test mit Python 3. Es benötigt
+eine vorhandene vertrauenswürdige native Prüf-App sowie die signierte alte und
+neue App-ZIP mit jeweils benachbartem Manifest und Signatur. Ohne `--run` prüft
+es beide Pakete und bereitet nur eine isolierte Kopie der alten App vor:
+
+```sh
+python tools/smoke_app_update.py --verifier PFAD_ZUR_VERTRAUENSWUERDIGEN_APP --baseline ALTE_APP.zip --candidate NEUE_APP.zip --output NEUER_TESTORDNER
+```
+
+Für den vollständigen Online-Test `--run` ergänzen und einen neuen Ausgabeordner
+wählen; der Elternordner muss bereits existieren. Unter Windows nur das
+standalone MSVC-Paket als Baseline verwenden. Unter WSL den Testordner im
+Linux-Dateisystem anlegen. Das Tool verlangt genau das erwartete neuere stabile
+Update-Angebot, wartet auf `installed`, prüft Hash und Version und stellt danach
+über den alten geprüften Helfer die Baseline wieder her. Neue Programme werden
+erst nach Hashvergleich ausgeführt. Erfolg ist ausschließlich `state: passed`
+mit `update_verified: true` und `restore_verified: true` in `report.json`.
+Vorbereitung allein ergibt `prepared`, keinen bestandenen Online-Test.
+Die Prüf-App und Eingabepakete bleiben unverändert; alle Jobs, Backups und
+Protokolle werden im Testordner aufbewahrt. Bei fehlgeschlagenem oder noch
+laufendem Update erfolgt kein paralleler Restore-Versuch.
+
 Aus einem mit `cmake --install` vorbereiteten Verzeichnis erzeugt das Tool
 `tools/package_app_release.py` die ZIP-Datei und `ZIPNAME.manifest.json`:
 

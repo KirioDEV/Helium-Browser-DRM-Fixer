@@ -121,6 +121,9 @@ if(BUILD_TESTING)
             "${CMAKE_SOURCE_DIR}/tests/detection_integration.py"
             "$<TARGET_FILE:helium_drm_fixer>" "$<TARGET_FILE:fixer_tests>")
         set_tests_properties(installation_detection PROPERTIES TIMEOUT 120)
+        add_test(NAME app_update_smoke_runner COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_SOURCE_DIR}/tests/smoke_app_update.py")
+        set_tests_properties(app_update_smoke_runner PROPERTIES TIMEOUT 60)
         add_test(NAME process_crash_recovery COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/crash_recovery.py" "$<TARGET_FILE:fixer_tests>")
         find_program(FIXER_OPENSSL_EXECUTABLE NAMES openssl
             HINTS "C:/Program Files/Git/mingw64/bin" "C:/Program Files/Git/usr/bin")
