@@ -351,6 +351,29 @@ nicht in das Paket kopiert. Ohne Schlüssel ist die Ausgabe ausdrücklich ein
 unsignierter Kandidat.
 
 Für CI-Artefakte ist `tools/sign_app_candidate.py` der bevorzugte Signierweg.
+Alternativ signiert der manuell gestartete Actions-Workflow **Sign app release**
+beide Plattformen gemeinsam. Einmalig das Environment `release-signing` anlegen,
+auf `main` beschränken und dort die Environment-Secrets `RELEASE_SIGNING_KEY_PEM`
+(vollständige bestehende verschlüsselte PEM-Datei) und
+`RELEASE_SIGNING_KEY_PASSPHRASE` (deren Passphrase) hinterlegen. Der private
+Schlüssel wird damit zusätzlich GitHub anvertraut; lokale Sicherung behalten.
+Bei erforderlichen Reviewern muss der alleinige Maintainer eigene Läufe
+freigeben können. Environment-Schutz vor dem ersten Signierlauf konfigurieren.
+
+Unter Actions den Workflow auf `main` starten und als `build_run_id` die
+numerische ID eines erfolgreichen **Build and test C++**-Push-Laufs angeben.
+Dieser Lauf muss zum selben Commit wie der gestartete Signierworkflow gehören;
+nach weiteren Änderungen an `main` erst dessen neuen grünen Build verwenden.
+Pull Requests, andere Repositories, Branches, Workflows und fehlgeschlagene
+Builds werden abgelehnt. Beide Pakete werden vollständig vorgeprüft, dann mit
+dem bestehenden Schlüssel signiert und gegen `keys/app-update-public.der`
+verifiziert. Das Actions-Artefakt `signed-app-release` enthält sechs Dateien
+(ZIP, Manifest und Signatur je Plattform). Der Workflow führt keine Programme
+aus diesen Paketen aus, hat keine Schreibrechte auf Releases und veröffentlicht
+nichts. Die native Offline-Prüfung vor manueller Veröffentlichung bleibt bestehen.
+Normale Build-/PR-Läufe erhalten keine Signier-Secrets. Details zu
+[Environment-Secrets und Schutzregeln](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments).
+
 Die Actions-Artefakte `windows-x64-unsigned-update-candidate` und
 `linux-x86_64-unsigned-update-candidate` enthalten bereits das fertige App-ZIP
 und sein Manifest. Nur die äußere Actions-Download-ZIP entpacken; die innere

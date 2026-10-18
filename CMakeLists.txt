@@ -125,6 +125,10 @@ if(BUILD_TESTING)
         find_program(FIXER_OPENSSL_EXECUTABLE NAMES openssl
             HINTS "C:/Program Files/Git/mingw64/bin" "C:/Program Files/Git/usr/bin")
         if(FIXER_OPENSSL_EXECUTABLE)
+            add_test(NAME ci_release_signing COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_SOURCE_DIR}/tests/ci_release_signing.py"
+                --openssl "${FIXER_OPENSSL_EXECUTABLE}")
+            set_tests_properties(ci_release_signing PROPERTIES TIMEOUT 90)
             add_test(NAME signed_app_packages COMMAND "${Python3_EXECUTABLE}"
                 "${CMAKE_SOURCE_DIR}/tests/release_packages.py"
                 --helper "$<TARGET_FILE:fixer_tests>"
