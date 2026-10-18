@@ -156,6 +156,10 @@ Reparse Points, Hardlinks und numerisch gleichnamige Versionsordner werden
 abgelehnt. Die höchste installierte Version ist kein Nachweis der gerade
 laufenden Browserversion. Helium muss vor einer Installation geschlossen sein.
 
+Die Windows-Erkennung unterstützt `helium.exe` und `chrome.exe` sowohl im
+Versionsordner als auch im Anwendungsordner. Vor Installation und Restore müssen
+alle Prozesse mit diesen Namen geschlossen sein; das betrifft auch Google Chrome.
+
 Die automatische Windows-Erkennung bevorzugt die zwei LocalAppData-Pfade
 `imput/Helium/Application` und `Helium/Application`, danach die
 `Helium/Application`-Ordner unter Program Files und Program Files (x86).

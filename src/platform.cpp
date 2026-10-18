@@ -704,13 +704,15 @@ fs::path resolve_helium_app(const fs::path &path) {
   }
   assert_safe_path(*version, false);
   const auto application = *version == root ? root.parent_path() : root;
-  const auto executable = fs::is_regular_file(*version / "helium.exe")
-                              ? *version / "helium.exe"
-                              : application / "helium.exe";
-  require(fs::is_regular_file(executable), "Helium executable not found",
-          Code::missing);
-  validate_binary(read_file(executable, 65536, true), false);
-  return *version / "WidevineCdm";
+  for (const auto &directory : {*version, application}) {
+    for (const auto &name : {"helium.exe", "chrome.exe"}) {
+      const auto executable = directory / name;
+      if (!fs::is_regular_file(executable)) continue;
+      validate_binary(read_file(executable, 65536, true), false);
+      return *version / "WidevineCdm";
+    }
+  }
+  throw Error("Helium executable not found", Code::missing);
 #else
   (void)path;
   throw Error(
@@ -812,8 +814,10 @@ void ensure_browser_closed() {
   require(Process32FirstW(snapshot.value, &entry) != 0,
           "Cannot inspect running processes", Code::failure);
   do {
-    require(_wcsicmp(entry.szExeFile, L"helium.exe") != 0,
-            "Close Helium before installing/restoring", Code::failure);
+    require(_wcsicmp(entry.szExeFile, L"helium.exe") != 0 &&
+                _wcsicmp(entry.szExeFile, L"chrome.exe") != 0,
+            "Close Helium and Chrome before installing/restoring",
+            Code::failure);
   } while (Process32NextW(snapshot.value, &entry));
 #else
   for (const auto &entry : fs::directory_iterator("/proc")) {

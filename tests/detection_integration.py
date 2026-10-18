@@ -86,6 +86,15 @@ def main():
         (app / "4294967296.0.0.0").mkdir()
         (app / "999.0.0.0").write_text("not a directory", encoding="ascii")
         inspect("numeric ordering and invalid entries", app)
+        chrome_app = application(root / "chrome-named Helium")
+        (chrome_app / "helium.exe").rename(chrome_app / "chrome.exe")
+        inspect("chrome-named Helium launcher", chrome_app)
+        inspect("chrome-named Helium explicit version", chrome_app / "10.0.0.0", "")
+        (chrome_app / "10.0.0.0" / "chrome.exe").write_bytes(b"invalid PE")
+        execute("invalid version chrome does not fall back to launcher",
+                ["--helium-app-path", chrome_app, "--check"], 4)
+        (chrome_app / "10.0.0.0" / "chrome.exe").write_bytes(pe)
+        inspect("chrome-named version executable", chrome_app)
         execute("explicit version folder", ["--helium-app-path", app / "9.0.0.0",
                 "--dry-run"], contains=(str(app / "9.0.0.0" / "WidevineCdm"),))
         execute("relative application folder", ["--helium-app-path",
