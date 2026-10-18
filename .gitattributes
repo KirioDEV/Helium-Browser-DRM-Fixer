@@ -1,0 +1,2 @@
+*.sh text eol=lf
+ui/linux/*.desktop text eol=lf

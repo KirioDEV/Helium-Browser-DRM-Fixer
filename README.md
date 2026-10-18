@@ -3,6 +3,9 @@
 Eine erste optionale Slint-Oberfläche wird entwickelt:
 [GUI bauen und testen](ui/README.md). Die veröffentlichten Downloads sind
 weiterhin die CLI-Ausgabe.
+Der separate Workflow „Build GUI previews“ bereitet eine portable Windows-GUI-EXE
+und ein Linux-AppImage für GUI-Testreleases vor:
+[Windows-Testanleitung](ui/WINDOWS_TESTING.md), [Linux-Testanleitung](ui/LINUX_TESTING.md).
 
 Konsolenprogramm für Windows 11 x64 und native Linux-x86_64-Installationen.
 Es beschafft Widevine aus dem Google-Komponentenupdate, prüft SHA-256 und

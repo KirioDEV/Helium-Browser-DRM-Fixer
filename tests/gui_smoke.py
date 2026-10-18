@@ -22,6 +22,10 @@ def main():
             environment[name.upper()] = str(directory)
         environment["PROGRAMW6432"] = environment["PROGRAMFILES"]
         if sys.platform == "win32":
+            if sys.argv[2:] == ["--packaged"]:
+                sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
+                from windows_gui_resources import verify_notices
+                verify_notices(executable)
             from windows_portable import check_notices, imports
             dependencies = imports(executable)
             if "msvcrt.dll" in dependencies:
@@ -49,8 +53,15 @@ def main():
             profile = Path(environment["XDG_CONFIG_HOME"]) / "net.imput.helium"
             profile.mkdir()
             (profile / "Local State").write_text("{}", encoding="utf-8")
+            # The GUI's system font backend creates its own font cache. Warm it
+            # in this isolated profile before checking for application writes.
+            subprocess.run([sys.executable, "-c",
+                            "import ctypes; fontconfig=ctypes.CDLL('libfontconfig.so.1'); "
+                            "assert fontconfig.FcInit() != 0"],
+                           env=environment, cwd=root, check=True, timeout=15)
         before = snapshot(root)
-        result = subprocess.run([str(executable), "--smoke-test"], env=environment,
+        image_arguments = ["--appimage-extract-and-run"] if sys.argv[2:] == ["--appimage"] else []
+        result = subprocess.run([str(executable), *image_arguments, "--smoke-test"], env=environment,
                                 cwd=root, capture_output=True, timeout=35)
         if result.returncode:
             raise RuntimeError(f"GUI failed: {result.returncode}: {result.stderr!r}")

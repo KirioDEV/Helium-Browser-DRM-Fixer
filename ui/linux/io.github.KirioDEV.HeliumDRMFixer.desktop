@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Helium DRM Fixer
+Comment=Install and restore Widevine for Helium
+Exec=helium_drm_fixer_gui
+Icon=io.github.KirioDEV.HeliumDRMFixer
+Terminal=false
+Categories=Utility;
+StartupNotify=true

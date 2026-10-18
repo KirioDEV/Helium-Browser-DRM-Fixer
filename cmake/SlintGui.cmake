@@ -24,6 +24,11 @@ FetchContent_Declare(Slint URL "${SLINT_URL}"
     URL_HASH SHA256=fe485305ed303215e76c04918ee9aefbffbe229f18f979098ec36c7fa1dab28b
     SOURCE_SUBDIR api/cpp)
 FetchContent_MakeAvailable(Slint)
+# The compiler's optional jemalloc build rejects prefixes containing spaces.
+# Use the standard allocator so CLion/WSL project paths work unchanged.
+get_target_property(FIXER_SLINT_COMPILER_FEATURES slint-compiler CORROSION_FEATURES)
+list(REMOVE_ITEM FIXER_SLINT_COMPILER_FEATURES jemalloc)
+set_property(TARGET slint-compiler PROPERTY CORROSION_FEATURES ${FIXER_SLINT_COMPILER_FEATURES})
 corrosion_set_cargo_flags(slint_cpp --locked)
 corrosion_set_cargo_flags(slint-compiler --locked)
 if(MSVC)
@@ -37,7 +42,16 @@ set_target_properties(helium_drm_fixer_gui PROPERTIES
     WIN32_EXECUTABLE TRUE
     SLINT_EMBED_RESOURCES embed-files)
 if(WIN32)
+    configure_file("${CMAKE_SOURCE_DIR}/cmake/windows_gui_icon.rc.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/generated/windows_gui_icon.rc" @ONLY)
+    target_sources(helium_drm_fixer_gui PRIVATE
+        "${CMAKE_CURRENT_BINARY_DIR}/generated/windows_gui_icon.rc")
+    set_source_files_properties("${CMAKE_CURRENT_BINARY_DIR}/generated/windows_gui_icon.rc"
+        PROPERTIES OBJECT_DEPENDS "${CMAKE_SOURCE_DIR}/ui/windows/helium-drm-fixer.ico")
     target_link_libraries(Slint INTERFACE imm32 uxtheme)
+else()
+    find_package(Fontconfig REQUIRED)
+    target_link_libraries(Slint INTERFACE Fontconfig::Fontconfig)
 endif()
 if(MSVC)
     target_compile_options(helium_drm_fixer_gui PRIVATE /W4 /permissive- /utf-8)

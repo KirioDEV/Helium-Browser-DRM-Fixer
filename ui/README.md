@@ -8,9 +8,17 @@ Laufende Arbeiten blockieren das Fenster nicht; ein Schließen während eines
 Vorgangs wird verhindert, bis der Vorgang bzw. seine sichere Rücknahme beendet ist.
 
 Der Schalter `FIXER_BUILD_GUI` ist standardmäßig aus. Die CLI und deren signierte
-Release-Pakete bleiben eigenständig. GUI-App-Updates, Linux-Praxistest und die
-vollständige Prüfung der zusätzlichen Lizenzhinweise folgen vor ihrer Auslieferung.
+Release-Pakete bleiben eigenständig. GUI-App-Updates und der Linux-Praxistest
+stehen noch aus. Der Workflow „Build GUI previews“ baut separat MSVC und Linux;
+die Windows-EXE und das Linux-AppImage dienen als herunterladbare Testpakete
+für ein Pre-release. Beide verwenden dasselbe SVG-Icon.
 Die Versionsanzeige ist noch kein automatischer Update-Check.
+
+Der Workflow lädt `windows-gui-preview-x64` und
+`linux-gui-preview-ubuntu24.04-x86_64` als getrennte Artefakte hoch. Die Dateien
+werden anschließend manuell an ein Pre-release angehängt; Details für Windows:
+[Download und Test](WINDOWS_TESTING.md). Die Windows-EXE enthält die zusätzlichen
+Lizenztexte, benötigt keine Nachbar-DLLs und führt beim Start keine Entpackroutine aus.
 
 ## Windows in dieser Arbeitskopie
 
@@ -33,6 +41,20 @@ oder ein entsprechendes CLion-Profil verwenden. Für MinGW wird das Rust-Ziel
 `x86_64-pc-windows-gnu` benötigt, für MSVC `x86_64-pc-windows-msvc`.
 
 ## Linux und allgemeiner CMake-Aufruf
+
+Build und isolierter Fenstertest (X11 über Xvfb):
+
+```sh
+bash tools/build_linux_gui.sh
+python3 tools/package_linux_gui.py --build build/linux-gui --output build/linux-gui-preview
+```
+
+Die Paketierung verlangt einen neuen Ausgabeordner. Sie lädt festgelegte,
+hashgeprüfte AppImage-Werkzeuge, bündelt Bibliotheken und Lizenzhinweise und
+erzeugt ein AppImage samt Prüfsumme, Build-Metadaten und Testanleitung.
+[Linux-Download, Test und Release-Handoff](LINUX_TESTING.md).
+
+Der direkte CMake-Aufruf bleibt möglich:
 
 ```sh
 cmake -S . -B build/gui -G Ninja -DCMAKE_BUILD_TYPE=Release -DFIXER_BUILD_GUI=ON -DBUILD_TESTING=ON

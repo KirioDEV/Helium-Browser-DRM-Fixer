@@ -1,0 +1,124 @@
+name: Build GUI previews
+on:
+  push:
+    paths:
+      - 'ui/**'
+      - 'src/**'
+      - 'include/**'
+      - 'cmake/**'
+      - 'CMakeLists.txt'
+      - 'keys/app-update-public.der'
+      - 'LICENSE'
+      - 'SECURITY.md'
+      - 'THIRD_PARTY.md'
+      - 'tools/*gui*'
+      - 'tests/gui*'
+      - '.github/workflows/gui-preview.yml'
+  pull_request:
+    paths:
+      - 'ui/**'
+      - 'src/**'
+      - 'include/**'
+      - 'cmake/**'
+      - 'CMakeLists.txt'
+      - 'keys/app-update-public.der'
+      - 'LICENSE'
+      - 'SECURITY.md'
+      - 'THIRD_PARTY.md'
+      - 'tools/*gui*'
+      - 'tests/gui*'
+      - '.github/workflows/gui-preview.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-gui:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_PROFILE_RELEASE_DEBUG: '0'
+      RUSTUP_TOOLCHAIN: '1.99.1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Rust toolchain
+        run: rustup toolchain install 1.99.1 --profile minimal --no-self-update
+      - name: Configure static MSVC GUI
+        shell: pwsh
+        run: cmake -S . -B build/gui -G 'Visual Studio 17 2022' -A x64 -DFIXER_BUILD_GUI=ON -DBUILD_TESTING=ON -DRust_TOOLCHAIN=1.99.1-x86_64-pc-windows-msvc '-DFIXER_APP_UPDATE_PUBLIC_KEY:FILEPATH=keys/app-update-public.der'
+      - name: Build GUI
+        run: cmake --build build/gui --config Release --target helium_drm_fixer_gui --parallel 4
+      - name: Isolated GUI interactions and portable startup
+        run: ctest --test-dir build/gui -C Release -R '^gui_readonly_startup$' --output-on-failure
+      - name: Package standalone GUI with embedded notices and shared icon
+        run: python tools/package_windows_gui.py --build build/gui --output build/windows-gui-preview
+      - name: Test packaged EXE without adjacent DLLs
+        shell: pwsh
+        run: |
+          python tests/gui_smoke.py build/windows-gui-preview/helium_drm_fixer_gui.exe --packaged
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $directory = 'build/windows-gui-preview'
+          $expected = ((Get-Content "$directory/helium_drm_fixer_gui.exe.sha256").Split(' ')[0]).ToLowerInvariant()
+          $actual = (Get-FileHash "$directory/helium_drm_fixer_gui.exe" -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($expected -ne $actual) { throw 'GUI EXE checksum mismatch' }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-gui-preview-x64
+          path: |
+            build/windows-gui-preview/helium_drm_fixer_gui.exe
+            build/windows-gui-preview/*.sha256
+            build/windows-gui-preview/*.svg
+            build/windows-gui-preview/gui-notices.zip
+            build/windows-gui-preview/WINDOWS_TESTING.md
+            build/windows-gui-preview/preview.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Windows preview handoff
+        shell: pwsh
+        run: |
+          '### Windows GUI preview ready' >> $env:GITHUB_STEP_SUMMARY
+          'Download windows-gui-preview-x64 and extract the outer artifact ZIP. Upload the EXE, checksum, SVG, gui-notices.zip and WINDOWS_TESTING.md to a pre-release with the matching source commit. Only the EXE is needed to run. This GUI is separate from signed CLI updates. No release was published.' >> $env:GITHUB_STEP_SUMMARY
+  linux-gui:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build pkg-config libcurl4-openssl-dev libssl-dev libx11-dev libx11-xcb-dev libxcursor-dev libxrandr-dev libxi-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libfontconfig1-dev xvfb xauth fonts-dejavu-core patchelf file squashfs-tools
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal --no-self-update
+          echo 'RUSTUP_TOOLCHAIN=1.99.1' >> "$GITHUB_ENV"
+      - name: Build GUI and test under Xvfb
+        run: bash tools/build_linux_gui.sh
+      - name: Build AppImage preview with dependency notices
+        run: python3 tools/package_linux_gui.py --build build/linux-gui --output build/linux-gui-preview
+      - name: Test the packaged AppImage without FUSE or real browser changes
+        run: |
+          image=$(find build/linux-gui-preview -maxdepth 1 -name '*.AppImage' -print -quit)
+          test -n "$image"
+          env -u WAYLAND_DISPLAY SLINT_BACKEND=winit-software xvfb-run -a python3 tests/gui_smoke.py "$image" --appimage
+          cd build/linux-gui-preview
+          sha256sum -c ./*.sha256
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux-gui-preview-ubuntu24.04-x86_64
+          path: |
+            build/linux-gui-preview/*.AppImage
+            build/linux-gui-preview/*.sha256
+            build/linux-gui-preview/LINUX_TESTING.md
+            build/linux-gui-preview/preview.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Preview handoff
+        run: |
+          echo '### Linux GUI preview ready' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Download linux-gui-preview-ubuntu24.04-x86_64, extract the outer artifact ZIP and attach the AppImage, checksum and LINUX_TESTING.md to a pre-release. Record the source commit. This preview is separate from signed CLI updates. No release was published. Real browser/streaming testing remains pending.' >> "$GITHUB_STEP_SUMMARY"
