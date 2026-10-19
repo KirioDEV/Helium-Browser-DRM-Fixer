@@ -59,6 +59,63 @@ def main():
         if sys.platform != "win32":
             execute("Linux retains profile target semantics", ["--helium-app-path",
                     root, "--check"], 2, contains=("only supported on Windows",))
+            home_root = root / "var-home"
+            real_home = home_root / "test-user"
+            real_home.mkdir(parents=True)
+            home_link = root / "home-alias"
+            home_link.symlink_to(home_root, target_is_directory=True)
+            home = home_link / "test-user"
+            environment["HOME"] = str(home)
+            environment.pop("XDG_CONFIG_HOME")
+            environment.pop("XDG_CACHE_HOME")
+            profile = real_home / ".config/net.imput.helium"
+            profile.mkdir(parents=True)
+            (profile / "Local State").write_text("{}", encoding="utf-8")
+            target = profile / "WidevineCdm"
+            output = execute("symlinked HOME detection", ["--check", "--json"], 3)
+            status = json.loads(output)
+            if status["state"] != "missing" or status["target"] != str(target):
+                raise RuntimeError("HOME was not resolved before profile inspection")
+            environment["XDG_CONFIG_HOME"] = str(home / ".config")
+            execute("XDG config below symlinked HOME", ["--check"], 3,
+                    contains=("Widevine is missing",))
+            alias_target = home / ".config/net.imput.helium/WidevineCdm"
+            execute("explicit target below symlinked HOME", ["--helium-path",
+                    alias_target, "--check"], 3, contains=("Widevine is missing",))
+            execute("cache below symlinked HOME", ["--cache-path"], program=helper,
+                    contains=(str(real_home / ".cache/helium-drm-fixer"),), read_only=False)
+            environment["XDG_CACHE_HOME"] = str(home / ".cache")
+            execute("XDG cache below symlinked HOME", ["--cache-path"], program=helper,
+                    contains=(str(real_home / ".cache/helium-drm-fixer"),))
+            original = source(real_home / "local-source", "1.2.3.4")
+            execute("local plan below symlinked HOME", ["--source", "chrome",
+                    "--chrome-path", home / "local-source", "--dry-run"],
+                    contains=("Local source version: 1.2.3.4",))
+            execute("install below symlinked HOME", ["--source", "chrome",
+                    "--chrome-path", home / "local-source"], read_only=False,
+                    contains=("Installed Widevine 1.2.3.4",))
+            execute("installed check below symlinked HOME", ["--check"],
+                    contains=("Widevine 1.2.3.4",))
+            execute("restore below symlinked HOME", ["--helium-path", alias_target,
+                    "--restore"], read_only=False)
+            execute("restored missing state", ["--check"], 3,
+                    contains=("Widevine is missing",))
+            target.symlink_to(original, target_is_directory=True)
+            execute("Widevine symlink still rejected", ["--check"], 4,
+                    contains=("Symlink rejected",))
+            target.unlink()
+            moved = profile.with_name("saved-profile")
+            profile.rename(moved)
+            profile.symlink_to(moved, target_is_directory=True)
+            execute("profile symlink still rejected", ["--check"], 4,
+                    contains=("Symlink rejected",))
+            profile.unlink()
+            moved.rename(profile)
+            config = real_home / ".config"
+            config.rename(real_home / "saved-config")
+            config.symlink_to(real_home / "saved-config", target_is_directory=True)
+            execute("config symlink still rejected", ["--check"], 4,
+                    contains=("Symlink rejected",))
             print(f"{passed} detection CLI scenarios passed")
             return
 

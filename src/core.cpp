@@ -238,10 +238,10 @@ fs::path resolve_target(const Options &o) {
   require(o.helium_app.empty() || (o.target.empty() && !o.restore),
           "Application path conflicts with exact target or restore",
           Code::invalid);
-  const auto target = !o.helium_app.empty() ? resolve_helium_app(o.helium_app)
-                      : o.target.empty()
-                          ? detect_target()
-                          : fs::absolute(o.target).lexically_normal();
+  const auto target = resolve_home_path(
+      !o.helium_app.empty() ? resolve_helium_app(o.helium_app)
+      : o.target.empty()    ? detect_target()
+                            : fs::absolute(o.target).lexically_normal());
   require(target.filename() == "WidevineCdm",
           "Target must be the exact WidevineCdm directory", Code::invalid);
   assert_safe_path(target);
@@ -378,12 +378,14 @@ int run(const Options &o) {
     std::cout << "Target: " << utf8(target) << '\n';
     std::cout << "Read-only plan. Source: " << o.source << ".\n";
     if (o.source == "chrome") {
-      const auto source = o.chrome.empty() ? detect_chrome() : o.chrome;
+      const auto source = resolve_home_path(
+          o.chrome.empty() ? detect_chrome() : fs::absolute(o.chrome));
       const auto cdm = read_cdm(source);
       std::cout << "Local source version: " << cdm.version
                 << " (not publisher-verified).\n";
     } else if (o.source == "package") {
-      const auto cdm = verify_crx(read_file(o.package, package_limit));
+      const auto cdm = verify_crx(
+          read_file(resolve_home_path(fs::absolute(o.package)), package_limit));
       std::cout << "Signed source version: " << cdm.version << '\n';
     } else
       std::cout << "Online version unknown: no request is made in this mode.\n";

@@ -998,15 +998,15 @@ int main(int argc, char **argv) {
     argument_pointers.push_back(nullptr);
     argc = count;
     argv = argument_pointers.data();
-    if (argc == 2 && std::string(argv[1]) == "--cache-path") {
-      std::cout << utf8(cache_path()) << '\n';
-      return 0;
-    }
     if (argc == 3 && std::string(argv[1]) == "--windows-space") {
       windows_space_tests(fs::absolute(from_utf8(argv[2])));
       return 0;
     }
 #endif
+    if (argc == 2 && std::string(argv[1]) == "--cache-path") {
+      std::cout << utf8(cache_path()) << '\n';
+      return 0;
+    }
     if (argc == 2 && std::string(argv[1]) == "--app-update-trust") {
       std::cout << (app_update_key_configured() ? "configured" : "disabled")
                 << '\n';

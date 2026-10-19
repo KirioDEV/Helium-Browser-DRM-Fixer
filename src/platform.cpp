@@ -227,6 +227,24 @@ std::string binary_name() {
 #endif
 }
 
+fs::path resolve_home_path(const fs::path &path) {
+#ifndef _WIN32
+  const auto home = env_path("HOME");
+  if (home.is_absolute() && path.is_absolute()) {
+    const auto boundary = home.lexically_normal();
+    const auto relative = path.lexically_relative(boundary);
+    if (!relative.empty() && *relative.begin() != "..") {
+      // HOME is an explicit user-environment boundary. Resolve only that root;
+      // profile, cache and Widevine descendants still undergo no-follow checks.
+      const auto resolved = fs::canonical(boundary);
+      assert_safe_path(resolved, false);
+      return relative == "." ? resolved : resolved / relative;
+    }
+  }
+#endif
+  return path;
+}
+
 void assert_safe_path(const fs::path &path, bool allow_missing) {
   require(!path.empty(), "Empty path");
   const auto full = fs::absolute(path);
@@ -678,6 +696,7 @@ fs::path cache_path() {
 #else
   auto base = env_path("XDG_CACHE_HOME");
   if (base.empty()) base = env_path("HOME") / ".cache";
+  base = resolve_home_path(base);
 #endif
   require(!base.empty() && base.is_absolute(),
           "No absolute user cache directory", Code::failure);
@@ -743,6 +762,7 @@ fs::path detect_target() {
           "Sandboxed installs are not supported", Code::missing);
   auto base = env_path("XDG_CONFIG_HOME");
   if (base.empty()) base = env_path("HOME") / ".config";
+  base = resolve_home_path(base);
   require(base.is_absolute(), "No absolute user config directory",
           Code::failure);
   for (const fs::path &candidate :

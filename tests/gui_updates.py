@@ -61,7 +61,11 @@ def main():
         target.chmod(0o755)
         running = target if windows or args.appimage else native
         if not windows:
-            env["APPIMAGE"] = str(target)
+            # Simulate a distro whose configured HOME traverses a system link.
+            home_alias = root / "home-alias"
+            home_alias.symlink_to(root, target_is_directory=True)
+            env["HOME"] = str(home_alias)
+            env["APPIMAGE"] = str(home_alias / "app" / name)
         staging = root / "staging"
         staging.mkdir()
         binary = staging / app_executable(platform, True)

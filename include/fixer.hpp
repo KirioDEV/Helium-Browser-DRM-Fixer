@@ -138,6 +138,10 @@ void validate_options(const Options &options);
 // Resolve once per operation. Restore must use a stable, exact target.
 fs::path resolve_target(const Options &options);
 
+// Resolve the configured Linux HOME boundary, not links within managed paths.
+// Windows paths are unchanged.
+fs::path resolve_home_path(const fs::path &path);
+
 enum class LocalState {
   missing,
   locally_invalid,

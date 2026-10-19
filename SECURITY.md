@@ -46,6 +46,12 @@ und seine GitHub-Quelle sind im letzten Abschnitt beschrieben.
   und `renameat`; Installation/Restore verwenden `renameat2(RENAME_NOREPLACE)`.
   Bereits vorhandene oder gleichzeitig erzeugte Umbenennungsziele werden dadurch
   auch dann nicht ersetzt, wenn sie leere Verzeichnisse sind.
+- Unter Linux wird das durch die Prozessumgebung gewählte `HOME` einmal auf
+  seinen tatsächlichen Pfad aufgelöst, damit ein Systemlink wie `/home` auf
+  `/var/home` funktioniert. Pfade darunter werden auf diese Home-Basis abgebildet;
+  Links innerhalb von Konfiguration, Browserprofil, Cache und Widevine-Ziel
+  bleiben verboten. Installation und Wiederherstellung verwenden den aufgelösten
+  Zielpfad mit den unveränderten No-Follow-Prüfungen.
 - Quellgrößen und Manifestversion werden vor Transaktionsdateien geprüft.
   Bereits gemeldeter Abbruch und nicht ausreichender verfügbarer Speicherplatz
   führen ebenfalls vor deren Erzeugung zum Fehler.

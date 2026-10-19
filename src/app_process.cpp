@@ -616,7 +616,7 @@ fs::path app_executable_path() {
   const auto image = std::getenv("APPIMAGE");
   require(image != nullptr, "Automatic GUI updates require an AppImage",
           Code::invalid);
-  const auto target = from_utf8(image);
+  const auto target = resolve_home_path(from_utf8(image));
   target_valid(target);
   return target;
 #else
@@ -665,7 +665,7 @@ fs::path start_app_update_with_trusted_key(
 }
 
 fs::path start_app_restore(const fs::path &target) {
-  return schedule(target, {}, "", "", true);
+  return schedule(resolve_home_path(target), {}, "", "", true);
 }
 
 int run_app_update_helper(const fs::path &request) {

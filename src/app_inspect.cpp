@@ -6,7 +6,8 @@ namespace {
 template <class Verify>
 Json inspect(const fs::path &input, Verify verify) {
   check_cancelled();
-  const auto package = fs::absolute(input).lexically_normal();
+  const auto package =
+      resolve_home_path(fs::absolute(input).lexically_normal());
   const auto name = utf8(package.filename());
   const std::string prefix = std::string(app_update_id) + "-";
 #ifdef _WIN32

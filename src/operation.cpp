@@ -55,10 +55,12 @@ OperationResult execute_operation(const Options &options,
         notify_progress(observer, event);
       });
     } else if (options.source == "package") {
-      cdm = verify_crx(read_file(options.package, package_limit));
+      cdm = verify_crx(read_file(
+          resolve_home_path(fs::absolute(options.package)), package_limit));
     } else {
-      const auto source = options.chrome.empty() ? detect_chrome()
-                                                 : fs::absolute(options.chrome);
+      const auto source = resolve_home_path(options.chrome.empty()
+                                                ? detect_chrome()
+                                                : fs::absolute(options.chrome));
       assert_safe_path(source, false);
       const auto s = fs::weakly_canonical(source),
                  t = fs::weakly_canonical(result.target);

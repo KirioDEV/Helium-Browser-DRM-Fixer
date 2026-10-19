@@ -10,6 +10,11 @@ The CI distribution baseline is **Ubuntu 24.04 x86_64**; older systems and other
 distributions are not guaranteed compatible. A working X11 or Wayland desktop,
 system fonts and a compatible graphics/input environment are required.
 
+System redirects in the configured `HOME` path (for example `/home` pointing to
+`/var/home`) are resolved before detection. The GUI displays the resolved target.
+Symlinks inside the browser profile or at `WidevineCdm` remain unsupported and
+are rejected. This path support does not establish distribution compatibility.
+
 In the download directory (replace the example filename with the actual file):
 
 ```sh
