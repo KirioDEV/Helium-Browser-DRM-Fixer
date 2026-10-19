@@ -1,351 +1,134 @@
-# Sicherheitsmodell und Validierungsstand
+# Security model
 
-Dieses Dokument beschreibt den implementierten Schutzumfang und bekannte
-Prüfgrenzen. Es ersetzt kein unabhängiges Sicherheitsaudit. Die Angaben zu
-CDM-Downloads beziehen sich auf Widevine; das getrennte App-Update-Verfahren
-und seine GitHub-Quelle sind im letzten Abschnitt beschrieben.
+This document explains the implemented protections, trust assumptions and
+limitations. It is not a claim of an independent security audit. For usage,
+see [README.md](README.md); for build/test instructions, see
+[DEVELOPMENT.md](DEVELOPMENT.md).
 
-Das Projekt ist ein unabhängiges Installationswerkzeug und kein offizielles
-Produkt von Google, Widevine oder Helium. Repository und App-Releases enthalten
-keine Widevine-Binaries; Installation, Cache und Backups speichern sie dagegen
-lokal beim Benutzer. Der Fixer entschlüsselt keine Medien, extrahiert keine
-Inhaltsschlüssel und umgeht keine DRM-/HDCP- oder Zugangsprüfungen.
-Siehe den [Disclaimer](README.md#disclaimer) und [Drittanbieterhinweise](THIRD_PARTY.md).
+## Scope and third-party software
 
-## Schutzmaßnahmen für CDM-Download und Installation
+The fixer installs and maintains Widevine files; it does not decrypt streaming
+media, extract content keys or bypass DRM/HDCP checks. Repository and app-release
+packages contain no Widevine binaries. Installation, package caching and backups
+store them locally on the user's computer. No Widevine files are uploaded to
+this project. See the [disclaimer](README.md#disclaimer) and
+[third-party notices](THIRD_PARTY.md).
 
-- Nur zwei belegte Google-Downloadhosts: `dl.google.com` und
-  `edgedl.me.gvt1.com`; Metadaten ausschließlich vom festgelegten Google-Endpunkt.
-- HTTPS, System-Zertifikatsprüfung, Hostnamenprüfung, öffentliche DNS-Adressen,
-  kontrollierte Weiterleitungen und Antwortgrößenlimits. Keine Proxy-Unterstützung,
-  damit ein Proxy die Adressrichtlinie nicht umgeht.
-- Das 120-Sekunden-Transferbudget eines HTTP-Aufrufs wird über alle Redirects
-  geteilt. Windows überwacht asynchrone Sende-/Empfangsoperationen und wartet bei
-  deren Schließen auf den letzten Callback, bevor Kontext und Lesepuffer freigegeben
-  werden. Deklarierte Übergrößen und unvollständige Content-Length-Antworten werden
-  abgelehnt; tatsächlich empfangene Bytes bleiben auch ohne Längenangabe begrenzt.
-- Download-Metadaten benötigen einen SHA-256-Wert, passende App-ID,
-  Protokollversion, vollständige Download/CRX3-Pipeline und konsistente Input-Hashes.
-- Alle CRX3-Proofs werden kryptografisch geprüft. Mindestens ein gültiger
-  Signaturschlüssel muss aus seinem SHA-256-Hash die festgelegte Widevine-ID
-  `oimompecagnajdejgnnjijobebaeigek` ergeben. Ein selbstsigniertes beliebiges Paket
-  genügt nicht. Das Verfahren folgt Chromiums Komponentenidentität;
-  es benötigt keine heruntergeladenen Vertrauensanker.
-- Der 2017er Web-Store-Publisher-Schlüssel wird nicht zusätzlich verlangt:
-  die Komponentenidentität ist der hier verwendete Vertrauensanker, keine
-  Behauptung einer Web-Store-Zertifizierung.
-- Maximal 64 MiB Paket, 1 MiB Update-Metadaten, 1 MiB CRX-Header,
-  256 ZIP-Einträge und 128 MiB deklarierter entpackter Inhalt. Nur Manifest,
-  plattformgerechte CDM-Bibliothek und optional LICENSE werden materialisiert.
-  Daten bleiben bis zur Prüfung begrenzt im Speicher; es wird kein untrusted ZIP
-  direkt ins Dateisystem entpackt.
-- Archivpfade, Sonderdateien, Linkattribute, Namenskollisionen und
-  Dateiverzeichniskollisionen werden abgelehnt. PE-/ELF-x86_64-Strukturprüfung
-  erfolgt ohne das Laden der Bibliothek.
-- Cachepakete werden vor jeder Verwendung erneut auf Hash und Signatur geprüft;
-  ein entpackter Cache wird nicht wiederverwendet.
-- Exklusive Dateierzeugung, native No-Follow-Dateihandles, private Rechte/ACLs,
-  Symlink-/Reparse-Prüfung, Hardlink-Ablehnung anhand der Linkanzahl des
-  geöffneten Dateihandles und exklusive Installationssperre.
-- Datei-, Journal-, Sperr- und Verzeichnisoperationen öffnen Elternverzeichnisse
-  komponentenweise ohne Linkauflösung. Windows hält dabei Handles ohne
-  Delete-Sharing. Linux verwendet Verzeichnisdeskriptoren mit `openat`, `mkdirat`
-  und `renameat`; Installation/Restore verwenden `renameat2(RENAME_NOREPLACE)`.
-  Bereits vorhandene oder gleichzeitig erzeugte Umbenennungsziele werden dadurch
-  auch dann nicht ersetzt, wenn sie leere Verzeichnisse sind.
-- Unter Linux wird das durch die Prozessumgebung gewählte `HOME` einmal auf
-  seinen tatsächlichen Pfad aufgelöst, damit ein Systemlink wie `/home` auf
-  `/var/home` funktioniert. Pfade darunter werden auf diese Home-Basis abgebildet;
-  Links innerhalb von Konfiguration, Browserprofil, Cache und Widevine-Ziel
-  bleiben verboten. Installation und Wiederherstellung verwenden den aufgelösten
-  Zielpfad mit den unveränderten No-Follow-Prüfungen.
-- Quellgrößen und Manifestversion werden vor Transaktionsdateien geprüft.
-  Bereits gemeldeter Abbruch und nicht ausreichender verfügbarer Speicherplatz
-  führen ebenfalls vor deren Erzeugung zum Fehler.
-- Staging und Backup liegen auf demselben Dateisystem wie das Ziel.
-  Journale und Dateien werden vor Zustandswechseln geflusht. Linux synchronisiert
-  Verzeichnisse; Windows verwendet Write-Through-Umbenennungen.
-- Linux-Installation, Rollback und Restore halten Ziel-Elternordner und
-  Verwaltungsordner bis zum Ende geöffnet. Staging, Sperre, Inventar,
-  Journal und Umbenennungen benutzen diese Deskriptoren und deren relativ
-  geöffnete Unterverzeichnisse. Inventartraversierung folgt keinen Links,
-  ist auf 1024 Einträge und 32 Verzeichnisebenen begrenzt und öffnet Dateien
-  relativ zum jeweils gehaltenen Verzeichnis.
-- Bei einem erkannten Austausch der sichtbaren Verzeichnispfade wird abgebrochen.
-  Automatisches Rollback greift weiterhin auf die ursprünglichen Verzeichnisse zu.
-  Ein separat gestartetes Restore prüft die Pfadbindung auch nach seinen
-  Umbenennungsphasen und behält bei Unterbrechung das Journal für einen Folgelauf.
-- Restore vergleicht die tatsächlichen Dateiinhalte mit dem gespeicherten
-  Inventar und überschreibt keine zwischenzeitlich modifizierte Installation.
+## Widevine download trust
 
-## Grenzen
+- Google metadata and downloads use fixed endpoints. CDM download hosts are
+  restricted to `dl.google.com` and `edgedl.me.gvt1.com`; GitHub is not a CDM source.
+- Native HTTPS transports validate system certificates and hostnames, restrict
+  redirects, bound response sizes and share a transfer deadline across redirects.
+  Proxy use is not supported.
+- DNS answers are restricted to public addresses and the validated address is
+  pinned for the connection. Redirects undergo address/host checks again.
+  Host headers and TLS SNI retain the authorized hostname.
+- Metadata must contain consistent platform, component identity, hashes and
+  package information. SHA-256 is checked before installation.
+- CRX3 proofs are verified cryptographically. At least one valid signing key must
+  derive Widevine component ID `oimompecagnajdejgnnjijobebaeigek`. An arbitrary
+  self-signed CRX3 is insufficient. This is component-identity verification,
+  not a claim of Web Store certification.
+- Bounds include a 64 MiB package, 1 MiB metadata/CRX header, 256 ZIP entries and
+  128 MiB declared expanded data. Only the manifest, matching CDM library and
+  optional license are materialized after validation.
+- Unsafe archive paths, links, special files, collisions and invalid native
+  x86_64 PE/ELF headers are rejected. Libraries are inspected, never loaded.
+- Cached packages are hash/signature-checked again before reuse. An extracted
+  cache is not trusted. Explicit local Chrome sources have no CRX3 publisher
+  guarantee; offline CRX3 validation cannot establish update freshness.
 
-Eine kompromittierte Sitzung desselben Benutzers, Administrator/root oder ein
-kompromittiertes Betriebssystem können Dateien, Journale und das Programm
-selbst verändern. Dies liegt außerhalb des Schutzmodells. Gehaltene Verzeichnisse
-sind keine Linux-Schreibsperre gegen denselben Benutzer: Einzelne Dateien oder
-Unterverzeichnisse können weiterhin manipuliert werden. Inventarprüfung und
-Umbenennung sind keine gemeinsame atomare Operation. Die Bindung der
-Transaktionswurzeln ersetzt keine vollständige Abwehr sämtlicher solcher Rennen.
-Bei ausgetauschten sichtbaren Pfaden muss deren Zuordnung vor einem erneuten
-Restore geklärt werden; das Programm verschiebt die fremden Ersatzordner nicht zurück.
-Für die geöffneten Verzeichniswege werden Leserechte benötigt; fehlen sie,
-wird abgebrochen. Linux-Dateisysteme müssen `RENAME_NOREPLACE` unterstützen;
-es gibt keinen unsicheren Fallback auf ersetzendes `rename()`.
+## Filesystem transactions
 
-Beide Plattformen pinnen die vorab geprüfte DNS-Adresse: Linux über
-`CURLOPT_RESOLVE`, Windows über `WINHTTP_OPTION_RESOLUTION_HOSTNAME` auf dem
-Request-Handle. Der ursprüngliche Hostname bleibt für TLS-SNI, Zertifikatsprüfung
-und HTTP-Host erhalten. Die tatsächlich verbundene IP muss zusätzlich exakt mit
-der gepinnten Adresse übereinstimmen. Ein fehlgeschlagenes Pinning bricht ab;
-es gibt keinen Fallback auf eine erneute freie Auflösung durch den HTTP-Client.
-Alle bis zu 64 gelieferten DNS-Adressen müssen die Public-IP-Regeln erfüllen;
-eine private Adresse neben einer öffentlichen genügt zur Ablehnung. IPv6 erlaubt
-nur Global Unicast und schließt zusätzlich `2001::/23`, 6to4 und die beiden
-Dokumentationsbereiche aus. Öffentliche Spezialausnahmen in `2001::/23` werden
-bewusst ebenfalls abgelehnt, da die festen Downloadhosts sie nicht benötigen.
-TLS und Paket-Signaturprüfung bleiben verpflichtend. Die DNS-Vorabfrage läuft
-jetzt in einem einzigen Worker, dessen Wartezeit auf zehn Sekunden und das
-verbleibende HTTP-Gesamtbudget begrenzt ist. Der Aufrufer prüft Abbruch und
-Deadline während des Wartens in höchstens 20-Millisekunden-Intervallen, zuzüglich
-Scheduling-Verzögerungen. Eingaben und Ergebniszustand gehören dem Worker-Task;
-er hält keine Referenzen auf bereits zurückgekehrte Aufrufe oder Testeinstellungen.
+File and directory operations use no-follow handles, exclusive creation,
+hardlink rejection, private permissions/ACLs and an exclusive installation lock.
+Windows retains directory handles without delete sharing. Linux uses anchored
+directory descriptors and relative operations such as `openat` and `renameat2`.
+Rename destinations must not already exist; no overwriting fallback is used.
 
-Die native Betriebssystem-Auflösung selbst wird dabei nicht gewaltsam beendet.
-Bleibt sie nach Timeout/Abbruch aktiv, weist der einzelne Worker weitere
-Auflösungsversuche ab. Es gibt keine wachsende Warteschlange oder zusätzliche
-Resolver-Threads. Ein spätes Ergebnis löst keine Verbindung aus und wird nicht
-für einen späteren Aufruf wiederverwendet. Nach Rückkehr der alten Auflösung ist
-ein neuer Versuch möglich. Beim Programmende wird ein inaktiver Worker regulär
-beendet; ein weiterhin blockierter Worker verzögert den Prozessabschluss nicht.
+The configured Linux `HOME` is an explicit environment boundary. It is resolved
+once to support system redirects such as `/home` to `/var/home`. Descendants
+still undergo strict validation: configuration/profile/CDM/cache links are not
+made acceptable by this resolution. The resolved destination is used throughout
+an operation.
 
-Ein Stromausfall ist anspruchsvoller als ein Prozessabbruch: Garantien hängen
-auch von Dateisystem, Laufwerk und dessen Flush-Verhalten ab. Es gibt keinen
-universellen atomaren Austausch zweier nichtleerer Ordner.
+Staging and backups remain on the destination filesystem. Existing CDM files
+are preserved before replacement. Journals and files are flushed across state
+changes; Linux also synchronizes directories. Path bindings, journals and file
+inventories are rechecked during install and restoration. Unexpected replacement
+directories or modified backup contents are preserved rather than overwritten.
 
-Eine lokale Chrome-Quelle besitzt keine CRX3-Herkunftsgarantie und muss vom
-Benutzer ausdrücklich ausgewählt werden. Selbst korrektes Widevine kann bei
-Streamingdiensten wegen Browseridentität, HDCP oder weiterer Anforderungen scheitern.
+A pending transaction blocks another installation until recovery completes.
+If an ancestor or managed directory moves, restore its original path mapping
+before retrying recovery. The fixer does not automatically relocate unknown
+replacement directories. Keep the private state directories while recovery is
+needed. Backups are not automatically deleted.
 
-## Getestet und noch offen
+## Signed fixer-app updates
 
-Aktueller Maintainer-Stand: Release 0.1.3 und der App-Update-Test von 0.1.2 auf
-0.1.3 sind als abgeschlossen gemeldet. Dies ist eine Maintainer-Rückmeldung,
-kein unabhängiges Audit. Der reale Bazzite-/Helium-Test für Widevine-Installation,
-Streaming und Restore steht weiterhin aus. Ältere Testberichte unten beschreiben
-ihre jeweiligen Versionen und ersetzen diese noch offene Prüfung nicht.
+App updates use stable releases from the fixed
+`KirioDEV/Helium-Browser-DRM-Fixer` repository. A metadata check is not a package
+signature check. Drafts, prereleases and ambiguous versions are rejected.
 
-Lokal geprüft: Windows-MinGW-Build; Ubuntu-24.04-GCC-Build;
-Ubuntu-Clang-Build mit AddressSanitizer/UndefinedBehaviorSanitizer;
-Options-, Pfad-, Hash-, Manifest-, Archiv-, Metadaten- und Recovery-Tests;
-fünf echte Prozessabbrüche mit Wiederherstellung.
-Die im Projektverlauf ausgeführten CTest-Prüfungen umfassen Windows-MinGW,
-Linux-GCC und Linux-Clang/ASan/UBSan. Die nachfolgenden Fallzahlen beschreiben
-historische Prüfläufe, nicht die aktuelle Gesamtzahl der Tests.
-Darunter sind 53 native Windows- bzw. 52 native Linux-
-HTTPS-Szenarien mit lokalen TLS-Servern: unbekannte CA, falscher Hostname,
-abgelaufenes Zertifikat, Redirect-Regeln, POST-Redirect, deklarierte/unbekannte
-Größen, Chunked Transfer, abgeschnittene Antwort, Header-/Body-Stillstand,
-gemeinsames Redirect-/Streaming-Zeitbudget und Abbruch im Stillstand/Streaming.
+Packages use RSA-PKCS#1-v1.5 with SHA-256, a fixed signature context and an
+embedded DER-SPKI RSA-3072/4096 public key. The public key comes from the build,
+never from release metadata. Without a configured key, signed updates are
+disabled. The signature covers the exact manifest bytes. Identity, repository,
+platform, version, filename, sizes, hashes and every payload entry must match.
 
-Diese Fixtures laufen in einem separat kompilierten Testprogramm. Linux benutzt
-eine ephemere CA-Datei. Nur der Windows-Testtransport toleriert eine unbekannte CA
-für ein anschließend exakt per SHA-256 geprüftes Serverzertifikat; native Hostnamen-
-und Datumsprüfungen bleiben aktiv. Die normale EXE enthält diese Testkonfiguration
-nicht und verwendet die System-Zertifikatsprüfung. Es werden keine Test-CAs in
-Systemspeicher importiert. Ein zusätzlicher Windows-Test verwirft einen falschen Pin.
-CTest prüft außerdem, dass eine Testdiagnose nicht in der normalen EXE enthalten ist
-und diese keine Fixture-CLI-Option akzeptiert.
-Ein zusätzlicher CLI-Lauf prüft 45 Szenarien mit der normalen Programmdatei und
-isolierten Home-/Cache-/Profilpfaden: Erstinstallation, Update, wiederholbares
-Restore, fehlendes/ungültiges CDM, ungültige lokale Quellen und Pakete, Quelle im
-Zielordner und Wiederherstellung nach echtem Prozessabbruch. Die Testpfade
-enthalten Leerzeichen, Umlaute und CJK-Zeichen; das Windows-Crash-Testprogramm
-liest seine Argumente jetzt wie die normale EXE über die Unicode-Kommandozeile.
-CDM-Fixtures enthalten nur synthetische PE-/ELF-Header und werden niemals geladen.
-Quellen und alte Installationsdateien einschließlich Änderungszeiten bleiben
-erhalten. Snapshots der schreibfreien und abgelehnten CLI-Aufrufe prüfen den
-verbleibenden Dateisystemzustand; eine Instrumentierung sämtlicher Schreib- und
-Netzwerk-Systemaufrufe sowie echte Browser-/Streamingtests ersetzen sie nicht.
-Echte Google-Pakete für Windows und Linux wurden auf Signatur, Struktur und
-Version geprüft; manipulierte Kopien werden abgelehnt.
-Der vollständige HTTPS-Download- und Prüfpfad wurde auf beiden Plattformen
-gegen Google ausgeführt. 169 Assertions unter Windows bzw. 234 unter Linux
-decken die zusätzlichen plattformspezifischen Fälle ab.
-Zusätzlich geprüft: Abbruch an allen fünf Transaktionsgrenzen mit Rollback,
-Hardlink-Ablehnung, manipulierte Backups und Journal-IDs, ungültige Quellen,
-eine unter Windows ohne Delete-Sharing geöffnete DLL und fehlende
-Linux-Schreibrechte bei einem unprivilegierten Benutzer.
-Dateisystemtests erzeugen Umbenennungsziele gezielt zwischen Vorprüfung und
-Systemaufruf. Unter Windows wird die Umbenennung geöffneter Elternverzeichnisse
-blockiert; unter Linux werden deren Pfade gezielt durch Symlinks ersetzt und
-die Verwendung der ursprünglichen Verzeichnisdeskriptoren bestätigt.
-Weitere 16 Linux-Szenarien tauschen Ziel-Elternordner oder Verwaltungsordner
-an fünf Installations- und drei Restore-Grenzen aus. Der Austausch wird erkannt,
-Ersatzbestände und ihre Journale bleiben unverändert, und der ursprüngliche
-Bestand wird automatisch zurückgesichert oder nach Wiederherstellung der
-Pfadzuordnung per Restore wiederhergestellt. Inventar und Sperre werden außerdem
-direkt nach dem Umbenennen ihres geöffneten Verzeichnisses geprüft.
-Auf einem separaten 64-KiB-Test-Dateisystem wurde der Speicherplatzmangel
-vor dem Anlegen von Transaktionsdateien erkannt. Zusätzlich wurde beim Schreiben
-eines neuen Journals tatsächlich ENOSPC ausgelöst: Das vorherige Journal bleibt
-erhalten, die teilweise geschriebene temporäre Datei wird entfernt. Dieser Fall
-besteht mit GCC und mit Clang unter ASan/UBSan, einschließlich des neuen gebundenen
-Journalzugriffs. Ein erweiterter Parser-Fuzz-Lauf
-unter ASan/UBSan verarbeitete 215.118 Eingaben in 304 Sekunden ohne gemeldeten
-Fehler; dies belegt keine vollständige Fehlerfreiheit.
+GUI and CLI identities/state directories are separate and fixed at compile time.
+Windows self-updates require standalone MSVC builds; local MinGW builds can
+inspect packages but cannot self-update. The Linux GUI replaces the complete
+Type-2 AppImage rather than an executable inside its temporary mount.
 
-Weitere 18 Linux-Fälle füllen ein eigenes 8-MiB-tmpfs während Staging,
-Installation oder Restore, jeweils mit und ohne vorhandene Installation.
-Sie prüfen einen tatsächlich teilweise geschriebenen CDM-Puffer, erhaltene
-Original- und vorbereitete Ersatzdateien, gültige verbleibende Journale,
-Cleanup temporärer Journaldateien und wiederholbares Restore nach Platzfreigabe.
-Ein fehlgeschlagenes Staging verhindert auch eine erneute Installation nicht.
-Die Linux-CI bindet dafür ein separates tmpfs ein.
+A private copy of the old application acts as the helper. Parent identity and
+executable hashes are bound, staged files are verified again, and replacement
+waits for parent exit. The Linux GUI helper keeps checked private copies of its
+bundled libraries so unmounting the old AppImage cannot remove dependencies.
+Backup/journal validation protects restoration and missing-target recovery.
 
-Die erweiterten lokalen HTTPS-Fixtures speisen DNS-Fehler, leere/übergroße
-Antwortmengen, öffentliche und gemischte private IPv4-/IPv6-Antworten sowie
-geänderte Antworten bei Redirects ein. Die native Verbindung verwendet die
-gepinnten Loopback-Adressen, während Host und TLS-SNI den freigegebenen
-Hostnamen behalten; ein ausschließlich für die IP gültiges Zertifikat wird
-abgelehnt. Diese CTest-Fixtures ändern weder Hosts-Datei noch System-DNS.
+GUI updates restart the verified replacement. A failed handoff only restarts
+the previous GUI if its bytes still match the expected old hash. CLI updates
+do not automatically launch the replacement. `scheduled` only confirms handoff;
+`installed` or `restored` confirms completion. See [APP_UPDATES.md](ui/APP_UPDATES.md).
 
-Weitere Worker-Tests prüfen DNS-Zeitlimit, gemeinsames Budget über Redirects,
-Abbruch, ein verspätetes ungültiges Ergebnis nach Zerstörung der Testeinstellungen
-und die spätere Wiederverwendung. 50 zusätzliche Prozessstarts pro Compiler
-prüfen das reguläre Herunterfahren des Resolver-Workers.
-Ein separater Linux-Container-Test mit normaler Produktions-CLI und tatsächlich
-nicht antwortendem Loopback-DNS-Server bestätigt mit GCC und Clang/ASan/UBSan:
-Die Anfrage endet nach etwa zehn Sekunden, SIGINT beendet sie innerhalb von
-0,12 Sekunden, und das Programmende wartet nicht auf das 30-Sekunden-Zeitlimit
-des System-Resolvers. Der Container hat kein externes Netzwerk; weder Hosts-Datei
-noch DNS-Einstellungen des Hosts werden geändert. Dieser Test gehört nicht zu
-CTest und verändert selbst auch keine Container-Resolver-Einstellungen.
+## Build and signing boundaries
 
-Ein weiterer separater Linux-Container-Test (`tests/dns_rebinding.py`) prüft
-sieben Fälle je Compiler mit UDP-DNS, dem wirklichen `getaddrinfo`-Pfad und dem
-nativen HTTPS-Transport. Die Test-IP-Adressen 8.8.8.8 und 8.8.4.4 werden nur dem
-Loopback-Interface dieses Containers zugewiesen; er besitzt kein externes Netz.
-Der DNS-Server wechselt seine Antwort mit TTL null auf eine private Adresse.
-Die erste Verbindung verwendet weiter die gepinnte öffentliche IP, ohne erneut
-DNS abzufragen; eine unabhängige UDP-Abfrage bestätigt den tatsächlichen Wechsel.
-Bei Redirects wird die neue private Antwort vor dem Verbindungsaufbau abgelehnt.
-Ein neuer öffentlicher Peer ist nach erneuter Prüfung zulässig. Weitere Fälle
-prüfen gemischte IPv4-/IPv6-Antworten, private Antworten und NXDOMAIN.
-Der private Zielserver darf weder HTTP-Anfragen noch TLS-SNI erhalten; an den
-öffentlichen Fixture-Servern bleiben ursprüngliches TLS-SNI und HTTP-Host erhalten.
+CI uses temporary test keys for fixtures. Production signing is restricted to
+validated successful main-push builds and the release-signing environment.
+Both platform inventories are checked before the encrypted key is materialized.
+Temporary key files are outside upload directories and removed afterwards;
+signatures are checked against the pinned project key. Publishing is manual.
 
-Dieser Test verwendet das getrennt kompilierte Netzwerk-Testprogramm mit
-System-DNS statt Antwortinjektion und einer privaten CA-Datei. Der normale Build
-bleibt frei von diesem Modus. `NET_ADMIN` ist nur für die Loopback-Testadressen
-im isolierten Container nötig; weder Host-Netzwerk noch System-Vertrauenskette
-werden geändert. Der Test ist nicht Bestandteil des normalen CTest-Laufs.
+The signing account/environment is trusted. A compromised authorized main
+change, signing environment or private key can produce malicious signed updates.
+App-update signatures are not Windows Authenticode signatures and do not remove
+SmartScreen warnings.
 
-13 native Windows-Platzmangelfälle wurden auf einem neu erzeugten 32-MiB-VHD
-mit NTFS geprüft: teilweises Staging, fünf Update- und drei Restore-Grenzen,
-Vorprüfung sowie zwei Journalersatz-Zugriffe. Die Originale bleiben erhalten;
-nach Platzfreigabe sind erneute Installation und wiederholbares Restore möglich.
-Die Fülldateien verwenden Write-Through; vor der Wiederaufnahme wird auf die
-NTFS-Platzfreigabe gewartet. Kleine Erstinstallationsjournale können resident
-in der MFT bleiben; Journalfehler werden mit einem größeren Altinventar erzwungen.
-Unbekannte und unplausible Freiplatzwerte werden in der Vorprüfung abgelehnt.
-Der separate Test wurde lokal mit MinGW ausgeführt und ist außerdem Teil der
-MSVC-CI. Erfolgreiche vollständige GitHub-CI-Läufe wurden vom Maintainer bestätigt;
-ein lokaler MSVC-Build wurde in der Entwicklungsumgebung nicht ausgeführt.
+## Limitations
 
-Noch nicht geprüft sind System-DNS-Stillstand und tatsächliches DNS-Rebinding
-unter Windows.
-Ein vorgeschalteter freier-Speicherplatz-Check reserviert keinen Speicherplatz;
-andere Prozesse können ihn nach der Prüfung verbrauchen.
+- Root/administrator, a compromised OS or another process with the same user's
+  authority can alter files and the program itself. This is outside the threat model.
+- Held Linux descriptors do not lock files against the same user. Inventory
+  checks and renames are not one atomic operation and cannot eliminate every race.
+- Power-loss recovery depends on filesystem, device and flush behavior. There
+  is no universal atomic swap of two non-empty directories.
+- A free-space check does not reserve space; other processes can consume it.
+- A local CDM check does not prove publisher integrity or streaming/HD support.
+  Browser identity, HDCP and service policy can still prevent playback.
+- Automated fixtures do not establish compatibility with every distribution,
+  display setup or real streaming service. Flatpak/Snap, ARM64 and macOS are not
+  supported. Windows system-DNS stall/rebinding behavior lacks the corresponding
+  isolated real-system coverage available for Linux.
 
-Noch keine Freigabe als umfassend auditiert. Ausstehend sind ein lokaler
-MSVC-Lauf, Betrieb mit echten Helium-Installationen einschließlich Streaming,
-separate AppImage-/Sandbox-Tests und langfristige Fuzz-/Vulnerability-Prüfungen.
-ARM64, macOS, Flatpak und Snap sind nicht freigegeben.
+For reports, provide OS/browser/app versions, exact error text and reproducible
+steps. Do not post credentials, cookies, license-server tokens or private keys.
 
-## Primärquellen
+## Implementation references
 
-- WinHTTP-DNS-Pinning: https://learn.microsoft.com/en-us/windows/win32/winhttp/option-flags#winhttp_option_resolution_hostname
-- libcurl-DNS-Pinning: https://curl.se/libcurl/c/CURLOPT_RESOLVE.html
-- IPv6-Sonderbereiche: https://www.iana.org/assignments/iana-ipv6-special-registry/
-
-- CRX3-Struktur: https://chromium.googlesource.com/chromium/src/+/main/components/crx_file/crx3.proto
-- Chromium-Verifikation: https://github.com/chromium/chromium/blob/main/components/crx_file/crx_verifier.cc
-- WinHTTP: https://learn.microsoft.com/en-us/windows/win32/winhttp/about-winhttp
-- CNG-Signaturen: https://learn.microsoft.com/en-us/windows/win32/api/bcrypt/nf-bcrypt-bcryptverifysignature
-- libcurl: https://curl.se/libcurl/
-- libcurl-Größenlimit: https://curl.se/libcurl/c/CURLOPT_MAXFILESIZE_LARGE.html
-- WinHTTP-Callback-Lebenszeit: https://learn.microsoft.com/en-us/windows/win32/api/winhttp/nc-winhttp-winhttp_status_callback
-- Linux-Umbenennungsflags: https://github.com/torvalds/linux/blob/master/Documentation/filesystems/vfs.rst
-- Windows-Verzeichnishandles und Sharing: https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew
-
-## App-Releasepakete und Vertrauensanker
-
-App-Updates verwenden ausschließlich das festgelegte Repository
-`KirioDEV/Helium-Browser-DRM-Fixer`. `--check-app-update` liest Metadaten des
-neuesten öffentlichen stabilen Releases. Diese Abfrage prüft noch keine
-Paketsignatur. Entwürfe und Prereleases werden nicht als Update-Ziel verwendet.
-
-`--update-app` lädt Manifest, Signatur und Paket und prüft sie vor der Installation.
-RSA-PKCS#1-v1.5/SHA-256 verwendet einen festen Signaturkontext und einen im Build
-verankerten RSA-3072/4096-SPKI-Schlüssel. Der öffentliche Projektschlüssel liegt
-in `keys/app-update-public.der`; private Schlüssel gehören nicht ins Repository.
-Heruntergeladene Schlüssel werden nicht als Vertrauensanker übernommen. Ohne
-konfigurierten öffentlichen Build-Schlüssel werden signierte App-Updates abgelehnt.
-
-Die Signatur wird vor der Manifestauswertung geprüft. Identität, Plattform,
-kanonische Version, Paketname/-größe/-hash und das vollständige begrenzte
-Dateiinventar müssen zusammenpassen. ZIP-Pfade, Links, Sonderdateien und
-Namenskollisionen werden abgelehnt. Jedes Nutzfile wird auf Größe und SHA-256,
-die Programmdatei zusätzlich auf natives x86_64-PE-/ELF-Format geprüft.
-Pakete für ein Selbstupdate dürfen keine externen Runtime-DLLs benötigen.
-Windows-Selbstupdates sind deshalb auf standalone MSVC-Builds beschränkt;
-lokale MinGW-Entwicklungsbuilds können Pakete prüfen, sich aber nicht selbst updaten.
-
-Der Austausch wird erst nach dem Ende des aufrufenden Prozesses durch eine
-private Kopie der bisherigen App ausgeführt. Prozessidentität und alter
-Programmhash werden gebunden; der Helfer prüft die signierte Übergabe erneut.
-Backup, Journal, Sperre und Wiederherstellung schützen die einzelne Programmdatei.
-`scheduled` bestätigt nur die Planung. Erst `--app-update-status JOB --json`
-mit `installed` beziehungsweise `restored` bestätigt den Abschluss. Es erfolgt
-bei der CLI kein automatischer Start der neu heruntergeladenen Programmdatei. Der alte
-Recovery-Helfer bleibt für Statusabfragen und `--restore-app` verfügbar.
-
-Die GUI ab 0.1.2 verwendet eine getrennte, fest kompilierte Paketidentität und
-eigene Zustandsverzeichnisse. Nach bestätigtem Update startet sie die vollständig
-geprüfte neue GUI. Unter Linux wird das äußere AppImage ersetzt; native Eltern-
-und Helferdatei werden zusätzlich an einen separaten Hash gebunden. Die geladenen
-AppImage-Bibliotheken werden vor dem Elternende in das private Helferverzeichnis
-kopiert und gegengeprüft, damit das Aushängen des alten AppImages sie nicht entfernt.
-Bei einer abgelehnten Übergabe wird die alte GUI nur nach erneutem Hashabgleich
-gestartet. Details und Testgrenzen stehen in `ui/APP_UPDATES.md`.
-
-Die CI baut und testet Windows mit MSVC sowie Linux mit GCC und Clang. Nur nach
-erfolgreichen Build-Jobs eines main-Push-Laufs wird der Signierjob im selben
-Workflow aufgerufen. Er prüft zusätzlich Build-Identität und Job-Ergebnisse.
-Die Environment-Secrets `RELEASE_SIGNING_KEY_PEM` und
-`RELEASE_SIGNING_KEY_PASSPHRASE` sind nur im Signierschritt verfügbar.
-Der verschlüsselte Schlüssel wird temporär außerhalb der Upload-Verzeichnisse
-geschrieben, gegen den öffentlichen Projektschlüssel abgeglichen und anschließend
-entfernt. Die vorhandenen ZIP-/Manifestbytes bleiben unverändert; jede erzeugte
-Signatur wird erneut geprüft. GitHub erhält durch diese Einrichtung ebenfalls
-Zugriff auf den Schlüssel und seine Passphrase. Eine kompromittierte berechtigte
-main-Änderung oder Signierumgebung liegt außerhalb dieser Paket-Vertrauenskette.
-Der Workflow hat keine Schreibrechte auf Releases und veröffentlicht nichts.
-
-Die App-Update-Signatur ist keine Windows-Authenticode-Signatur. Die EXE besitzt
-derzeit keine bestätigte Windows-Herausgebersignatur; SmartScreen kann deshalb
-beim Download und Start warnen.
-
-Im bisherigen Projektverlauf bestanden 204 synthetische Paket-/Update-Szenarien
-auf Windows und Linux mit temporären Testschlüsseln. Produktiv signierte
-0.1.0- und 0.1.1-Pakete wurden laut Maintainer-Ausgaben nativ unter Windows und
-Debian-WSL verifiziert. Das Linux-Paket bleibt für Ubuntu 24.04 x86_64 gebaut;
-dies ist keine allgemeine Debian-Freigabe. Der echte isolierte Online-Test gegen
-das veröffentlichte Release v0.1.1 ist inzwischen für beide Plattformen bestätigt:
-Windows wurde mit `tools/smoke_app_update.py --run` ausgeführt, Debian-WSL durch
-die entsprechende Maintainer-Ausgabe bestätigt. Beide Durchläufe prüfen das
-Update 0.1.0 auf 0.1.1 und die Wiederherstellung der ursprünglichen 0.1.0 mit
-Versions-/Hashvergleich. Unter Windows müssen auch die Staging-Dateipfade im
-240-Zeichen-Budget liegen; das Testskript prüft dieses Budget in UTF-16-Codeunits.
-Die synthetischen Ablaufprüfungen ersetzen diese realen Testläufe nicht.
+- [Chromium CRX3 schema](https://chromium.googlesource.com/chromium/src/+/main/components/crx_file/crx3.proto)
+- [Chromium CRX verifier](https://github.com/chromium/chromium/blob/main/components/crx_file/crx_verifier.cc)
+- [WinHTTP options](https://learn.microsoft.com/en-us/windows/win32/winhttp/option-flags)
+- [libcurl address pinning](https://curl.se/libcurl/c/CURLOPT_RESOLVE.html)
+- [IPv6 special-purpose registry](https://www.iana.org/assignments/iana-ipv6-special-registry/)

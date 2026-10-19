@@ -23,10 +23,9 @@ if ($actual -ne $expected) { throw 'Checksum mismatch' }
 The checksum detects file damage; obtain both files from the project's release
 page. The EXE is not Authenticode-signed, so Windows may show the unknown
 publisher/SmartScreen prompt. It is separate from signed CLI update packages;
-the CLI updater does not install this GUI. Version 0.1.2 uses footer update controls;
-since 0.1.3, Settings > Updates installs newer signed stable GUI releases.
-Keep the original EXE filename. The old 0.1.1
-GUI needs one manual upgrade first. See [APP_UPDATES.md](APP_UPDATES.md).
+the CLI updater does not install this GUI. Use Settings > Updates to install
+newer signed stable GUI releases. Keep the original EXE filename. For older
+builds and recovery instructions, see [APP_UPDATES.md](APP_UPDATES.md).
 
 `gui-notices.zip` is an optional readable copy of the notice archive embedded as
 RCDATA resource 104. It contains project/Slint/Rust dependency licenses and the
@@ -45,7 +44,7 @@ Rust standard-library notices. It is not loaded or extracted at application star
 7. Close the browsers, select **Restore**, confirm, and select **Check** again.
    The initial Widevine state/version should return; initially absent means missing.
 
-## Maintainer handoff
+## Release packaging
 
 After committing and pushing, wait for **Actions > Build GUI previews**, including
 its signing job, to pass. Stable releases use the EXE, checksum and signed

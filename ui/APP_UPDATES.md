@@ -9,7 +9,7 @@ If a newer compatible GUI package, manifest and signature are published, the
 footer shows a highlighted, underlined **Update available - VERSION** link.
 It opens **Settings > Updates**, where **Update to VERSION** leads to the
 **Update and restart** confirmation. Update status and progress stay on that page.
-The app downloads the manifest/signature, verifies the embedded RSA public key,
+The app downloads the manifest/signature, verifies it using the embedded RSA public key,
 then checks the ZIP and every payload file before scheduling replacement.
 The helper pins the parent process, waits for it to exit, verifies the staged
 files again, replaces the executable and restarts the GUI. The previous version
@@ -22,18 +22,15 @@ Prereleases are ignored by the automatic updater. A release title alone cannot
 make a package eligible; it needs a higher three-component application version,
 matching asset names, manifest and signature.
 
-## First update-capable version
+## Older installations
 
-Version **0.1.2** introduced GUI self-updates. The old 0.1.1 GUI preview needs
-one manual upgrade to 0.1.2 or newer. Later signed stable versions can be
-installed from the app, using Settings > Updates since 0.1.3.
+GUI builds older than **0.1.2** require a manual replacement with a current
+download. Version 0.1.2 uses footer update controls; current builds use
+Settings > Updates. Close the old app, keep a backup, and replace only the app
+executable with the new download. Keep the canonical filename and retain any
+existing recovery directories.
 Do not overwrite an existing release with different binaries using the same
 version. Increase the project version for each new update.
-
-Version 0.1.2 uses its original footer check/update controls. Since 0.1.3, these
-controls live in Settings > Updates and the footer update link opens that page.
-The maintainer reports the 0.1.3 release and app-update test complete. Real
-Bazzite/Helium Widevine installation and streaming testing remain pending.
 
 ## Supported files and recovery
 

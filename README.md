@@ -1,9 +1,15 @@
 # Helium DRM Fixer
 
-Check, install and restore Widevine for Helium on **Windows 11 x64** and
-**Linux x86_64**. The desktop app provides local status checks, explicit
-installation confirmation, backups and signed app updates. A separate CLI
-is available for terminal use.
+Helium DRM Fixer is a standalone maintenance utility for the **Helium browser**
+on **Windows 11 x64** and **Linux x86_64**. It helps set up or repair the local
+Widevine Content Decryption Module (CDM), which a browser uses to play protected
+media from streaming services.
+
+Use it to check whether Widevine is present and locally valid, install a verified
+copy when needed, or restore the previous installation. The app backs up the
+existing state before replacement and asks for confirmation in its desktop
+interface. A separate command-line interface is available for terminal use.
+Installing Widevine does not guarantee playback or HD support for every service.
 
 **[Download for Windows (.exe)](https://github.com/KirioDEV/Helium-Browser-DRM-Fixer/releases/latest/download/helium_drm_fixer_gui.exe)**
 · **[Download for Linux (.AppImage)](https://github.com/KirioDEV/Helium-Browser-DRM-Fixer/releases/latest/download/helium_drm_fixer_gui.AppImage)**
@@ -61,30 +67,29 @@ local Chrome files do not receive a publisher-integrity guarantee.
 
 Windows targets the browser's application/version directory. Linux targets a
 profile-based Widevine directory. Flatpak/Snap Helium installations are not
-supported. Since 0.1.3, redirects in the configured Linux `HOME` are resolved;
+supported. Redirects in the configured Linux `HOME` are resolved;
 symlinks inside the profile or Widevine target remain rejected.
 
 ## App updates
 
-Since 0.1.3, use **Settings > Updates > Check for updates**. When a newer
+Use **Settings > Updates > Check for updates**. When a newer
 compatible release exists, the footer displays an underlined
 **Update available - VERSION** link to that page. Confirm **Update and restart**
 to download, verify and install it. The previous app version is retained for
 recovery. The startup check only reads public GitHub release metadata.
 
-Version 0.1.2 already supports GUI updates using its footer controls; previews
-older than 0.1.2 need one manual upgrade. Only higher-version, signed stable
-releases are offered automatically. GUI and CLI packages cannot replace each
+Only higher-version, signed stable releases are offered automatically.
+GUI and CLI packages cannot replace each
 other. Widevine updates and fixer-app updates are separate operations.
 
 [Update verification, recovery and maintainer release instructions](https://github.com/KirioDEV/Helium-Browser-DRM-Fixer/blob/main/ui/APP_UPDATES.md).
 
-## Compatibility and validation
+## Compatibility and limitations
 
-- Windows GUI use and the 0.1.2 → 0.1.3 app-update test have been reported
-  successful by the maintainer.
-- Linux builds, signed updates, recovery and redirected-home scenarios have
-  automated coverage. The real Bazzite/Helium streaming test is still pending.
+- Windows downloads target Windows 11 x64. Linux downloads use an Ubuntu 24.04
+  baseline; an AppImage does not guarantee compatibility with every distribution.
+- Browser packaging, filesystem permissions and the selected profile affect
+  whether installation can proceed. Use the platform guides to check the target.
 - A locally valid Widevine installation does not guarantee playback, HD/UHD,
   HDCP compatibility or acceptance by a particular streaming service. A service
   can impose requirements that this installer cannot change.
@@ -95,6 +100,7 @@ other. Widevine updates and fixer-app updates are separate operations.
 
 [Windows CLI download](https://github.com/KirioDEV/Helium-Browser-DRM-Fixer/releases/latest/download/helium_drm_fixer.exe)
 · [CLI commands, builds and technical reference](https://github.com/KirioDEV/Helium-Browser-DRM-Fixer/blob/main/CLI.md)
+· [Build and contribute](https://github.com/KirioDEV/Helium-Browser-DRM-Fixer/blob/main/DEVELOPMENT.md)
 · [GUI development and packaging](https://github.com/KirioDEV/Helium-Browser-DRM-Fixer/blob/main/ui/README.md)
 · [Third-party software and licenses](THIRD_PARTY.md)
 
@@ -128,7 +134,23 @@ third-party products. See [Google's Widevine notice](https://chromium.googlesour
 and [third-party notices](THIRD_PARTY.md). Use only sources and services you
 are authorized to use, and follow applicable licenses, service terms and law.
 
-The project is provided **as is**, under [LICENSE](LICENSE), without a guarantee
-of compatibility, uninterrupted operation or fitness for a particular purpose.
-This notice describes the project's scope; it is not a legal determination
-or a grant of permission from any third party.
+### Warranty and liability
+
+The software is provided **as is**, without warranties, under [LICENSE](LICENSE).
+To the extent permitted by applicable law, its authors and copyright holders
+disclaim warranties and liability arising from use of the software, including
+data loss, damaged installations, loss of access or service interruptions.
+No compatibility, recovery, security, availability or HD/UHD playback guarantee
+is made. Back up important data independently before changing an installation;
+the app's backup/restore feature is not a substitute for your own backup.
+
+**Mandatory law takes precedence.** Nothing in these notices excludes or limits
+liability or rights that cannot lawfully be excluded or limited. This includes,
+where applicable, liability for intentional misconduct, gross negligence,
+negligently caused injury to life, body or health, mandatory product liability
+and non-waivable consumer rights. The MIT license text remains unchanged.
+
+Public availability of a download or a successful signature check does not
+establish a license, authorization or endorsement from a third party. These
+notices describe the project's scope; they are not a legal determination or
+a guarantee of enforceability in any jurisdiction.

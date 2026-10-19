@@ -1,81 +1,62 @@
-# Quellen und Lizenzen
+# Third-party software and notices
 
-Dieses Projekt ist die C++-Umsetzung der vorherigen Go-Implementierung.
-Die Projektlizenz steht in [LICENSE](LICENSE). Lokale Go-Referenzordner gehören
-nicht zum veröffentlichten C++-Paket.
+The application is licensed under [LICENSE](LICENSE). Dependencies and Widevine
+retain their own licenses; the project's license does not replace those terms.
 
-| Bestandteil | Version / Bindung | Lizenz | Quelle |
+| Component | Version/binding | License | Source |
 | --- | --- | --- | --- |
-| nlohmann/json | 3.12.0, SHA-256 in CMakeLists.txt | MIT | https://github.com/nlohmann/json |
-| miniz | 3.1.2, SHA-256 in CMakeLists.txt | MIT | https://github.com/richgel999/miniz |
-| Slint (optionale GUI) | 1.18.1, SHA-256 in cmake/SlintGui.cmake | Slint Royalty-free Desktop, Mobile, and Web Applications License 2.0 | https://github.com/slint-ui/slint |
-| Corrosion (nur GUI-Build) | 0.6.1, SHA-256 in cmake/SlintGui.cmake | MIT | https://github.com/corrosion-rs/corrosion |
-| libcurl (Linux) | Systempaket, mindestens 7.85 | curl license | https://curl.se/docs/copyright.html |
-| OpenSSL (Linux) | Systempaket, mindestens 3.0 | Apache-2.0 | https://www.openssl.org/source/license.html |
-| MinGW-Compilerlaufzeiten (Windows-MinGW) | aus der gewählten Toolchain | jeweilige Runtime-Lizenzen mit Ausnahmen | https://www.mingw-w64.org/ und https://gcc.gnu.org/onlinedocs/libstdc++/manual/license.html |
+| nlohmann/json | 3.12.0; pinned in CMakeLists.txt | MIT | https://github.com/nlohmann/json |
+| miniz | 3.1.2; pinned in CMakeLists.txt | MIT | https://github.com/richgel999/miniz |
+| Slint (GUI) | 1.18.1; pinned in cmake/SlintGui.cmake | Slint Royalty-free Desktop, Mobile, and Web Applications License 2.0 | https://github.com/slint-ui/slint |
+| Corrosion (GUI build) | 0.6.1; pinned in cmake/SlintGui.cmake | MIT | https://github.com/corrosion-rs/corrosion |
+| libcurl (Linux) | Distribution package, 7.85+ | curl license | https://curl.se/docs/copyright.html |
+| OpenSSL (Linux) | Distribution package, 3.0+ | Apache-2.0 | https://www.openssl.org/source/license.html |
+| MinGW runtimes (development builds) | Selected compiler toolchain | Applicable runtime licenses and exceptions | https://www.mingw-w64.org/ |
 
-Windows nutzt WinHTTP, Crypt32, BCrypt und weitere Windows-Systembibliotheken;
-sie werden nicht in das Paket kopiert. Die Linux-CLI bindet Systembibliotheken
-dynamisch. Das separate GUI-AppImage bündelt einen Teil dieser Bibliotheken.
+## Distributed notices
 
-Die Slint-GUI hat eigene signierte Update-Pakete und wird nicht durch CLI-Pakete
-ersetzt. Ihr `AboutSlint`-Widget ist über „Settings → About“ erreichbar. Die GUI-Paketierung
-erfasst zusätzlich die Lizenztexte der tatsächlich ausgewählten Rust-Abhängigkeiten
-und der Rust-Standardbibliothek.
+Windows uses WinHTTP, Crypt32, BCrypt and other system libraries supplied by the
+OS. Published MSVC builds link the compiler runtime statically. The Linux CLI
+uses system libraries dynamically; the GUI AppImage bundles selected libraries.
 
-Das Linux-GUI-AppImage enthält die Lizenztexte des über Cargo.lock gebundenen
-Rust-Abhängigkeitsgraphen und der Rust-Standardbibliothek. Paketierung und
-Versionsinventar stehen in `tools/collect_gui_licenses.py`. Für
-im Crate fehlende Lizenzdateien enthält `tools/gui-license-supplements.json`
-Quellen aus festen Upstream-Commits mit SHA-256. In Quelldateien enthaltene
-Hinweise werden im Original mitgeliefert; Standardlizenztexte sind als solche
-erkennbar und ersetzen keine erfundenen Copyright-Angaben. Für tatsächlich
-gebündelte Linux-Bibliotheken werden die Copyright-/Lizenzdateien der
-Distributionspakete, deren Quellpaketversionen und Quellverweise aufgenommen.
-Die AppImage-Laufzeit hat einen eigenen beigefügten MIT-Lizenztext.
-AppImage-Buildwerkzeuge sind nach Version und SHA-256 in
-`tools/package_linux_gui.py` festgelegt und werden nicht mitverteilt.
+CMake installs README, security/third-party notices, the project license and
+miniz/nlohmann-json license texts under `share/helium-drm-fixer`. Windows EXEs
+embed the corresponding base licenses. GUI packaging adds Slint, the selected
+Cargo dependency graph and Rust standard-library notices.
 
-Die Windows-GUI wird mit MSVC gebaut. `tools/package_windows_gui.py`
-kopiert die EXE und bettet das zusätzliche Lizenz-/Quelleninventar als ZIP in
-RCDATA-Ressource 104 ein. Das separat angebotene `gui-notices.zip` ist eine
-bytegleiche lesbare Kopie; die EXE benötigt diese Datei nicht zum Start.
-Die vorhandenen Lizenzressourcen 101–103 und das Anwendungsicon bleiben erhalten.
-Slint/Rust und die MSVC-Laufzeit werden statisch gelinkt; Windows-System-DLLs
-werden nicht kopiert. MinGW-Builds sind weiterhin lokale Entwicklungsbuilds und
-werden von diesem Windows-Preview-Packager nicht zur Verteilung angenommen.
+`tools/collect_gui_licenses.py` collects GUI notices. Missing crate license files
+are supplemented from fixed upstream revisions with SHA-256 hashes recorded in
+`tools/gui-license-supplements.json`. Original embedded notices are retained;
+standard license texts are identified as such, without invented copyright claims.
+Bundled Linux libraries include distribution copyright/license information,
+source package versions and source references. The AppImage runtime has its own
+MIT notice. Build tools pinned in `tools/package_linux_gui.py` are not distributed.
 
-CMake installiert diese Drittanbieterhinweise, die Sicherheitsdokumentation,
-README und Projektlizenz sowie die Lizenztexte von miniz und nlohmann/json
-nach `share/helium-drm-fixer`. Die standalone Windows-MSVC-EXE enthält die
-Projektlizenz und die Lizenztexte dieser beiden Bibliotheken zusätzlich als
-eingebettete Ressourcen. Die MSVC-Compilerlaufzeit wird statisch eingebunden;
-die Release-EXE benötigt keine separat mitgelieferten Compiler-Runtime-DLLs.
-Für eine Veröffentlichung eines MinGW-Pakets zusätzlich die Lizenztexte und
-Pflichten der konkret verwendeten Compilerlaufzeiten prüfen. Für MSVC-Pakete
-die Microsoft-Runtime-Bedingungen prüfen. Build-Artefakte sind noch keine
-rechtlich oder sicherheitstechnisch freigegebenen Releases.
+The Windows GUI embeds its additional notice ZIP in RCDATA resource 104.
+`gui-notices.zip`, when offered separately, is a byte-identical readable copy
+and is not needed at runtime. MinGW development builds are not accepted by the
+MSVC distribution packager. Anyone distributing different toolchain/runtime
+combinations must satisfy those components' applicable terms.
 
-Das Widevine-Paket ist proprietär und wird nicht mitgeliefert oder in CI-Artefakte
-kopiert. Ein im Paket vorhandener LICENSE-Text wird bei der Installation erhalten.
-Heruntergeladene Testpakete und synthetische Fixtures werden nicht als
-Release-Bestandteile mitinstalliert.
+Preserve Slint's required `AboutSlint` widget in Settings > About and its
+[license text](https://github.com/slint-ui/slint/blob/v1.18.1/LICENSES/LicenseRef-Slint-Royalty-free-2.0.md).
+GUI and CLI have separate signed packages; neither package contains Widevine.
 
-Die Projektlizenz erteilt keine Rechte an Widevine. Maßgeblich bleiben die
-jeweils anwendbaren Bedingungen des Rechteinhabers; siehe
-[Googles Widevine-Hinweis](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/third_party/widevine/LICENSE).
-Das Repository und die App-Releases hosten keine Widevine-Binaries. Die App
-speichert bei Nutzung jedoch heruntergeladene Pakete, CDM-Dateien und Backups
-lokal im Benutzerkonto. Sie lädt diese Dateien nicht zu diesem Projekt hoch,
-entschlüsselt keine Streaminginhalte und extrahiert keine DRM-/Inhaltsschlüssel.
-Das Projekt ist nicht mit Google, Widevine, imput oder dem Helium-Projekt
-verbunden, wird nicht als deren offizielles Produkt herausgegeben und wird
-nicht von ihnen gesponsert. Namen und Marken dienen nur
-der Produktzuordnung. Der vollständige [Disclaimer](README.md#disclaimer)
-beschreibt Umfang und Grenzen; er ersetzt keine erforderlichen Nutzungsrechte.
+## Widevine and project affiliation
 
-Abweichungen vom ursprünglichen Plan: Windows-native HTTP/Kryptografie statt
-libcurl/OpenSSL auf Windows; miniz statt libarchive für ZIP; ein strikt begrenzter
-Decoder für die drei flachen CRX3-Protobuf-Nachrichten statt einer vollständigen
-Protobuf-Laufzeit. Kryptografische Algorithmen kommen ausschließlich aus
-CNG bzw. OpenSSL. Die Parser werden mit negativen Tests und Fuzzing geprüft.
+Widevine is proprietary and is not hosted in this repository or bundled in app
+releases. The fixer downloads it from Google's servers or reads a source selected
+by the user. Installation, caching and backups store files locally on the user's
+computer, without uploading them to this project. Any supplied Widevine license
+text is preserved during installation.
+
+The project license grants no rights to Widevine. Its applicable terms remain
+those of its rights holder; see [Google's Widevine notice](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/third_party/widevine/LICENSE).
+The fixer does not decrypt streaming media, extract content keys or modify
+Widevine to bypass DRM/HDCP checks or a service's access policies.
+
+This project is not affiliated with, endorsed by or sponsored by Google,
+Widevine, imput or the Helium browser project. Product names and trademarks
+identify compatible products and belong to their respective owners. The
+[disclaimer](README.md#disclaimer) explains the scope and does not grant
+third-party permissions or constitute a legal determination.

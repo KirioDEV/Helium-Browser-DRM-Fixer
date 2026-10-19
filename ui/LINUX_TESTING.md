@@ -30,19 +30,15 @@ does not require root. Do not run the GUI with `sudo`.
 
 The AppImage contains the GUI, embedded UI resources, bundled runtime libraries
 and dependency notices. It does not contain Widevine or a browser. CLI self-update
-commands do not update the GUI. Version 0.1.2 uses footer update controls;
-since 0.1.3, Settings > Updates installs newer signed stable GUI releases.
-Keep the original AppImage filename for this.
-The old 0.1.1 preview needs one manual upgrade first. See [APP_UPDATES.md](APP_UPDATES.md).
+commands do not update the GUI. Use Settings > Updates to install newer signed
+stable GUI releases. Keep the original AppImage filename. For older builds and
+recovery instructions, see [APP_UPDATES.md](APP_UPDATES.md).
 
 ## Real browser test
 
-The maintainer reports the 0.1.3 release and app-update test complete; the real
-Bazzite/Helium DRM test remains pending. A tester starting on 0.1.2 should first
-update to 0.1.3 and confirm the new version before the steps below. Version 0.1.2
-uses footer update controls; 0.1.3 uses Settings > Updates. If the old updater
-rejects `/home`, preserve the old AppImage and record its exact path/error before
-trying to launch it from the resolved physical path.
+Use a current app build before testing Widevine. If an update fails, preserve
+the AppImage and its recovery directories, record the exact error, and follow
+[APP_UPDATES.md](APP_UPDATES.md) before retrying.
 
 1. Record the distribution/version, desktop (X11/Wayland), Helium version and path.
 2. Before installing anything, test a specific streaming title in Helium and note
@@ -58,15 +54,15 @@ trying to launch it from the resolved physical path.
    previous Widevine version/state has returned. If Widevine was initially absent,
    the expected result is **Widevine is missing**.
 
-Helium Flatpak/Snap installations are not supported. The native/AppImage Helium
-browser itself still needs a real integration test. AppImage packaging of the
-fixer does not establish compatibility with every browser packaging format.
+Helium Flatpak/Snap installations are not supported. AppImage packaging of the
+fixer does not establish compatibility with every browser packaging format or
+streaming service; use the steps above to validate your own setup.
 
 Report the OS/desktop/Helium versions, initial state, install result, playback
 result and restore result. Include exact error text, but no account credentials,
 cookies or streaming authorization tokens.
 
-## Maintainer handoff
+## Release packaging
 
 After committing and pushing, wait for **Actions → Build GUI previews**, including
 its signing job, to pass. Stable releases use the AppImage, checksum and signed
@@ -75,8 +71,7 @@ CLI assets from the same commit, following [APP_UPDATES.md](APP_UPDATES.md).
 The `linux-gui-preview-ubuntu24.04-x86_64` artifact remains available for unsigned
 preview testing. Publication is manual; prereleases are not offered by the updater.
 
-The existing signed CLI release and its update assets remain separate. An actual
-GUI-based streaming test on Linux remains pending until a tester reports it.
+The signed CLI release and its update assets remain separate from GUI assets.
 
 ## Project scope
 

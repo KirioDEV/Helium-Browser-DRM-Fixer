@@ -230,7 +230,15 @@ export component AppWindow inherits Window {
                     vertical-stretch: 0;
                     Text { text: "Helium DRM Fixer"; color: root.ink; font-size: 20px; font-weight: 600; vertical-stretch: 0; }
                     Text {
-                        text: "An independent tool to verify and install Widevine with backup and restore. Not an official Helium or Google application.";
+                        text: "An independent utility to check, install and restore Widevine. Not affiliated with, endorsed by or sponsored by Google, Widevine, imput or the Helium browser project.";
+                        color: root.muted; wrap: word-wrap; vertical-stretch: 0;
+                    }
+                    Text {
+                        text: "Provided as is under the MIT License, without warranties or liability to the extent permitted by applicable law. Mandatory rights and liability remain unaffected. Back up important data before use; playback and recovery are not guaranteed.";
+                        color: root.muted; wrap: word-wrap; vertical-stretch: 0;
+                    }
+                    Text {
+                        text: "No Widevine binaries are bundled. Installation, caching and backups store files locally. This utility does not decrypt streaming media, extract content keys or bypass DRM/HDCP. Widevine and other third-party software remain subject to their own terms.";
                         color: root.muted; wrap: word-wrap; vertical-stretch: 0;
                     }
                 }
