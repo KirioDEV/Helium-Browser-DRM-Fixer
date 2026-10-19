@@ -20,6 +20,11 @@ werden anschließend manuell an ein Pre-release angehängt; Details für Windows
 [Download und Test](WINDOWS_TESTING.md). Die Windows-EXE enthält die zusätzlichen
 Lizenztexte, benötigt keine Nachbar-DLLs und führt beim Start keine Entpackroutine aus.
 
+CI speichert Cargo-Pakete, kompilierte Rust-Abhängigkeiten und die von Slint
+erzeugten C++-Header plattformgetrennt zwischen. Der Cache-Schlüssel enthält
+Toolchain und Slint-Buildkonfiguration. Ein erster Lauf ohne Cache bleibt ein
+vollständiger Build; nachfolgende Läufe können diese Abhängigkeiten wiederverwenden.
+
 ## Windows in dieser Arbeitskopie
 
 Rust ist lokal unter `build/ui-tools` abgelegt. Es verändert die globale

@@ -45,9 +45,25 @@ jobs:
           persist-credentials: false
       - name: Rust toolchain
         run: rustup toolchain install 1.99.1 --profile minimal --no-self-update
+      - name: Cache GUI Rust dependencies
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: |
+            ~/.cargo/registry
+            build/gui/cargo
+            build/gui/_deps/slint-build/generated_include
+          key: gui-rust-v1-windows-2022-x64-msvc-1.99.1-${{ hashFiles('cmake/SlintGui.cmake') }}
       - name: Configure static MSVC GUI
         shell: pwsh
-        run: cmake -S . -B build/gui -G 'Visual Studio 17 2022' -A x64 -DFIXER_BUILD_GUI=ON -DBUILD_TESTING=ON -DRust_TOOLCHAIN=1.99.1-x86_64-pc-windows-msvc '-DFIXER_APP_UPDATE_PUBLIC_KEY:FILEPATH=keys/app-update-public.der'
+        run: |
+          $cmakeArguments = @(
+            '-S', '.', '-B', 'build/gui',
+            '-G', 'Visual Studio 17 2022', '-A', 'x64',
+            '-DFIXER_BUILD_GUI=ON', '-DBUILD_TESTING=ON',
+            '-DRust_TOOLCHAIN:STRING=1.99.1-x86_64-pc-windows-msvc',
+            '-DFIXER_APP_UPDATE_PUBLIC_KEY:FILEPATH=keys/app-update-public.der'
+          )
+          & cmake @cmakeArguments
       - name: Build GUI
         run: cmake --build build/gui --config Release --target helium_drm_fixer_gui --parallel 4
       - name: Isolated GUI interactions and portable startup
@@ -97,6 +113,14 @@ jobs:
         run: |
           rustup toolchain install 1.99.1 --profile minimal --no-self-update
           echo 'RUSTUP_TOOLCHAIN=1.99.1' >> "$GITHUB_ENV"
+      - name: Cache GUI Rust dependencies
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        with:
+          path: |
+            ~/.cargo/registry
+            build/linux-gui/cargo
+            build/linux-gui/_deps/slint-build/generated_include
+          key: gui-rust-v1-ubuntu-24.04-x64-1.99.1-${{ hashFiles('cmake/SlintGui.cmake') }}
       - name: Build GUI and test under Xvfb
         run: bash tools/build_linux_gui.sh
       - name: Build AppImage preview with dependency notices
