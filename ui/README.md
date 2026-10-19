@@ -13,7 +13,7 @@ Release-Pakete bleiben eigenständig. Der Linux-Browser-Praxistest steht noch au
 Der Workflow „Build GUI previews“ baut separat MSVC und Linux;
 die Windows-EXE und das Linux-AppImage dienen als herunterladbare Testpakete
 für ein Pre-release. Beide verwenden dasselbe SVG-Icon.
-Ab 0.1.2 bietet die Versionszeile signierte App-Updates mit sicherem Austausch
+Ab 0.1.2 bietet Settings > Updates signierte App-Updates mit sicherem Austausch
 und Neustart. [Bedienung, Wiederherstellung und Release-Ablauf](APP_UPDATES.md).
 
 Der Workflow lädt `windows-gui-preview-x64` und

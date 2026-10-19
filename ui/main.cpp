@@ -120,9 +120,9 @@ int run_gui(bool smoke_test, const std::string& update_result = "") {
       return;
     }
     ui->set_busy(true);
-    ui->set_status_valid(false);
-    ui->set_phase(job == Job::inspect ? "Reading local status…"
-                                      : "Starting operation…");
+    ui->set_inspecting(job == Job::inspect);
+    if (job != Job::inspect) ui->set_status_valid(false);
+    if (job != Job::inspect) ui->set_phase("Starting operation…");
     try {
       worker = std::jthread([weak, options, job, smoke_test, &smoke_result,
                              &smoke_inspections, &startup_check] {
@@ -162,6 +162,7 @@ int run_gui(bool smoke_test, const std::string& update_result = "") {
                                        &startup_check] {
           if (auto window = weak.lock()) {
             show_status(*window, status);
+            (*window)->set_inspecting(false);
             (*window)->set_phase(slint::SharedString(message));
             (*window)->set_busy(false);
             if (startup_check) {
@@ -195,6 +196,7 @@ int run_gui(bool smoke_test, const std::string& update_result = "") {
         });
       });
     } catch (const std::exception& error) {
+      ui->set_inspecting(false);
       ui->set_busy(false);
       ui->set_phase(slint::SharedString("Unable to start operation: " +
                                         std::string(error.what())));
@@ -207,11 +209,13 @@ int run_gui(bool smoke_test, const std::string& update_result = "") {
     if (install && !ui->get_update_available()) return;
     const std::string expected = std::string(ui->get_update_version());
     ui->set_busy(true);
+    ui->set_update_busy(true);
     ui->set_update_status(install ? "Downloading and verifying update…"
                                   : "Checking for updates…");
     fixer::cancelled.store(false);
     try {
       worker = std::jthread([weak, install, expected] {
+        const auto check_started = std::chrono::steady_clock::now();
         std::string message;
         bool available = false, scheduled = false;
         std::string version;
@@ -258,6 +262,9 @@ int run_gui(bool smoke_test, const std::string& update_result = "") {
                                         : "Update check failed: ") +
                     error.what();
         }
+        // Keep quick metadata checks readable without delaying the UI thread.
+        if (!install)
+          std::this_thread::sleep_until(check_started + std::chrono::seconds(1));
         fixer::cancelled.store(false);
         slint::invoke_from_event_loop(
             [weak, message, version, available, scheduled] {
@@ -265,12 +272,14 @@ int run_gui(bool smoke_test, const std::string& update_result = "") {
                 (*window)->set_update_status(slint::SharedString(message));
                 (*window)->set_update_version(slint::SharedString(version));
                 (*window)->set_update_available(available);
+                (*window)->set_update_busy(false);
                 (*window)->set_busy(false);
                 if (scheduled) (*window)->window().hide();
               }
             });
       });
     } catch (const std::exception& error) {
+      ui->set_update_busy(false);
       ui->set_busy(false);
       ui->set_update_status(slint::SharedString(error.what()));
     }
@@ -289,8 +298,11 @@ int run_gui(bool smoke_test, const std::string& update_result = "") {
   });
   ui->on_cancel([&] {
     fixer::cancelled.store(true);
-    ui->set_phase(
-        "Cancellation requested. Any ongoing recovery will finish safely.");
+    if (ui->get_update_busy())
+      ui->set_update_status("Cancellation requested. Waiting for a safe stop.");
+    else
+      ui->set_phase(
+          "Cancellation requested. Any ongoing recovery will finish safely.");
   });
   ui->window().on_close_requested([&] {
     if (ui->get_busy()) {

@@ -1,5 +1,42 @@
 import { Button, LineEdit, VerticalBox, HorizontalBox, ScrollView, ComboBox, Spinner, AboutSlint, Palette } from "std-widgets.slint";
 
+component SettingsButton inherits Button {
+    min-width: 112px; max-width: 112px;
+    min-height: 32px; max-height: 32px;
+    horizontal-stretch: 0; vertical-stretch: 0;
+}
+
+component UpdateLink inherits FocusScope {
+    in property <string> text;
+    in property <color> ink;
+    in property <bool> active;
+    callback activated();
+    preferred-width: label.preferred-width;
+    preferred-height: 24px;
+    horizontal-stretch: 0;
+    enabled: root.active;
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-action-default => { if root.active { root.activated(); } }
+    key-pressed(event) => {
+        if root.active && (event.text == Key.Return || event.text == Key.Space) {
+            root.activated();
+            return accept;
+        }
+        return reject;
+    }
+    label := Text {
+        text: root.text; color: root.ink; font-size: 12px; font-weight: 600;
+        vertical-alignment: center;
+    }
+    Rectangle { y: parent.height - 3px; height: root.has-focus ? 2px : 1px; background: root.ink; }
+    TouchArea {
+        enabled: root.active;
+        mouse-cursor: pointer;
+        clicked => { root.focus(); root.activated(); }
+    }
+}
+
 export component AppWindow inherits Window {
     title: "Helium DRM Fixer";
     icon: @image-url("linux/io.github.KirioDEV.HeliumDRMFixer.svg");
@@ -15,6 +52,8 @@ export component AppWindow inherits Window {
 
     in-out property <bool> dark: true;
     in property <bool> busy;
+    in property <bool> update-busy;
+    in property <bool> inspecting;
     in property <bool> can-install;
     in property <bool> can-restore;
     in property <bool> status-valid;
@@ -26,7 +65,7 @@ export component AppWindow inherits Window {
     in property <bool> update-available;
     in property <string> update-version;
     in property <string> update-status;
-    // Settings is the top-level navigation menu; Help and About are its pages.
+    // Settings contains Help, About and Updates.
     in-out property <int> page: 0;
     private property <int> confirmation: 0;
     private property <color> ink: root.dark ? #edf0fa : #172033;
@@ -53,7 +92,7 @@ export component AppWindow inherits Window {
                 spacing: 3px;
                 Text { text: "HELIUM DRM FIXER"; color: #8e9dff; font-size: 11px; font-weight: 700; }
                 Text {
-                    text: root.page == 0 ? "Manage Widevine" : root.page == 1 ? "Settings" : root.page == 2 ? "Help" : "About";
+                    text: root.page == 0 ? "Manage Widevine" : root.page == 1 ? "Settings" : root.page == 2 ? "Help" : root.page == 3 ? "About" : "Updates";
                     color: root.ink; font-size: 24px; font-weight: 700;
                 }
             }
@@ -115,20 +154,17 @@ export component AppWindow inherits Window {
                         VerticalBox {
                             padding: 14px; spacing: 10px;
                             Text {
-                                text: root.confirmation == 3
-                                    ? "Install signed app update " + root.update-version + " and restart? The previous app version will be kept as a backup."
-                                    : root.confirmation == 1
+                                text: root.confirmation == 1
                                     ? "Verify Widevine from Google and install it in the folder above? Your current state will be backed up."
                                     : "Restore the previous Widevine state in the folder above?";
                                 color: root.ink; wrap: word-wrap;
                             }
-                            Text { text: root.confirmation == 3 ? "Only this app is updated. Your Widevine installation stays as it is." : "Close Helium and Chrome completely before continuing."; color: root.muted; wrap: word-wrap; }
+                            Text { text: "Close Helium and Chrome completely before continuing."; color: root.muted; wrap: word-wrap; }
                             HorizontalBox {
                                 Button {
-                                    text: root.confirmation == 3 ? "Update and restart" : "Confirm"; primary: true;
+                                    text: "Confirm"; primary: true;
                                     clicked => {
-                                        if root.confirmation == 3 { root.update-app(); }
-                                        else if root.confirmation == 1 { root.install(); }
+                                        if root.confirmation == 1 { root.install(); }
                                         else { root.restore(); }
                                         root.confirmation = 0;
                                     }
@@ -137,11 +173,11 @@ export component AppWindow inherits Window {
                             }
                         }
                     }
-                    if root.busy || root.phase != "": HorizontalBox {
+                    if (root.busy && !root.update-busy && !root.inspecting) || root.phase != "": HorizontalBox {
                         padding: 0px;
-                        if root.busy: Spinner { }
+                        if root.busy && !root.update-busy && !root.inspecting: Spinner { }
                         Text { text: root.phase; color: root.muted; wrap: word-wrap; vertical-alignment: center; }
-                        if root.busy: Button { text: "Cancel operation"; clicked => { root.cancel(); } }
+                        if root.busy && !root.update-busy && !root.inspecting: Button { text: "Cancel operation"; clicked => { root.cancel(); } }
                     }
                     Text { text: "HD playback and support for individual streaming services are not guaranteed."; color: root.muted; wrap: word-wrap; font-size: 12px; }
                 }
@@ -170,8 +206,9 @@ export component AppWindow inherits Window {
                     HorizontalBox {
                         padding: 0px; spacing: 8px;
                         alignment: start;
-                        Button { text: "Help"; width: 96px; height: 32px; clicked => { root.page = 2; } }
-                        Button { text: "About"; width: 96px; height: 32px; clicked => { root.page = 3; } }
+                        SettingsButton { text: "Updates"; clicked => { root.page = 4; } }
+                        SettingsButton { text: "Help"; clicked => { root.page = 2; } }
+                        SettingsButton { text: "About"; clicked => { root.page = 3; } }
                     }
                 }
                 if root.page == 2: VerticalBox {
@@ -197,6 +234,61 @@ export component AppWindow inherits Window {
                         color: root.muted; wrap: word-wrap; vertical-stretch: 0;
                     }
                 }
+                if root.page == 4: VerticalBox {
+                    padding: 0px; spacing: 14px; alignment: start;
+                    Rectangle {
+                        background: root.panel; border-radius: 12px;
+                        VerticalBox {
+                            padding: 16px; spacing: 10px;
+                            Text { text: "Version " + root.app-version; color: root.ink; font-size: 20px; font-weight: 600; }
+                            HorizontalBox {
+                                padding: 0px; spacing: 8px;
+                                if root.update-busy: Spinner { }
+                                Text {
+                                    text: root.update-status == "" ? "Check for a newer version of Helium DRM Fixer." : root.update-status;
+                                    color: root.muted; wrap: word-wrap; vertical-alignment: center;
+                                }
+                            }
+                            if root.confirmation == 0: HorizontalBox {
+                                padding: 0px;
+                                Button {
+                                    text: "Check for updates";
+                                    enabled: !root.busy;
+                                    clicked => { root.check-app-update(); }
+                                }
+                                if root.update-available: Button {
+                                    text: "Update to " + root.update-version; primary: true;
+                                    enabled: !root.busy;
+                                    clicked => { root.confirmation = 3; }
+                                }
+                            }
+                        }
+                    }
+                    if root.confirmation == 3: Rectangle {
+                        background: root.panel; border-radius: 12px;
+                        VerticalBox {
+                            padding: 14px; spacing: 10px;
+                            Text {
+                                text: "Install signed app update " + root.update-version + " and restart? The previous app version will be kept as a backup.";
+                                color: root.ink; wrap: word-wrap;
+                            }
+                            Text { text: "Only this app is updated. Your Widevine installation stays as it is."; color: root.muted; wrap: word-wrap; }
+                            HorizontalBox {
+                                Button {
+                                    text: "Update and restart"; primary: true;
+                                    enabled: !root.busy && root.update-available;
+                                    clicked => { root.confirmation = 0; root.update-app(); }
+                                }
+                                Button { text: "Cancel"; clicked => { root.confirmation = 0; } }
+                            }
+                        }
+                    }
+                    Text { text: "Updates are checked against stable GitHub releases and verified before installation."; color: root.muted; wrap: word-wrap; font-size: 12px; }
+                    if root.update-busy: Button {
+                        text: "Cancel operation";
+                        clicked => { root.cancel(); }
+                    }
+                }
             }
         }
         if root.page == 3: HorizontalBox {
@@ -212,23 +304,18 @@ export component AppWindow inherits Window {
         }
         HorizontalBox {
             padding: 0px; spacing: 8px;
+            height: 24px; vertical-stretch: 0;
             Text {
                 text: "Version " + root.app-version;
                 color: root.muted; font-size: 12px; vertical-alignment: center;
                 horizontal-stretch: 0;
             }
-            Text {
-                text: root.update-status; color: root.update-available ? #8e9dff : root.muted;
-                font-size: 11px; wrap: word-wrap; vertical-alignment: center;
-            }
-            Button {
-                text: root.update-available ? "Update to " + root.update-version : "Check updates";
-                height: 32px; horizontal-stretch: 0;
-                enabled: !root.busy && root.confirmation == 0;
-                clicked => {
-                    if root.update-available { root.page = 0; root.confirmation = 3; }
-                    else { root.check-app-update(); }
-                }
+            Rectangle { background: transparent; }
+            if root.update-available: UpdateLink {
+                text: "Update available - " + root.update-version;
+                ink: root.dark ? #a6b1ff : #4935d1;
+                active: !root.busy && root.confirmation == 0;
+                activated => { root.page = 4; }
             }
         }
     }

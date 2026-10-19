@@ -5,7 +5,7 @@ Eine optionale Slint-Oberfläche ergänzt die CLI:
 Der separate Workflow „Build GUI previews“ bereitet eine portable Windows-GUI-EXE
 und ein Linux-AppImage für GUI-Testreleases vor:
 [Windows-Testanleitung](ui/WINDOWS_TESTING.md), [Linux-Testanleitung](ui/LINUX_TESTING.md).
-Ab GUI-Version 0.1.2 sind signierte App-Updates über die Versionszeile vorbereitet:
+Ab GUI-Version 0.1.2 sind signierte App-Updates über Settings > Updates vorbereitet:
 [GUI-Updates und Veröffentlichung](ui/APP_UPDATES.md).
 
 Konsolenprogramm für Windows 11 x64 und native Linux-x86_64-Installationen.

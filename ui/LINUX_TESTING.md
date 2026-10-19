@@ -25,7 +25,7 @@ does not require root. Do not run the GUI with `sudo`.
 
 The AppImage contains the GUI, embedded UI resources, bundled runtime libraries
 and dependency notices. It does not contain Widevine or a browser. CLI self-update
-commands do not update the GUI. From version 0.1.2 the GUI's own footer can install
+commands do not update the GUI. From version 0.1.2 Settings > Updates can install
 newer signed stable GUI releases. Keep the original AppImage filename for this.
 The old 0.1.1 preview needs one manual upgrade first. See [APP_UPDATES.md](APP_UPDATES.md).
 

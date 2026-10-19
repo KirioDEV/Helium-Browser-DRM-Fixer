@@ -1,12 +1,14 @@
 # Signed GUI app updates
 
 The GUI checks the latest stable release in `KirioDEV/Helium-Browser-DRM-Fixer`
-after its initial local Widevine inspection. The footer also provides **Check
-updates**. This request reads public GitHub metadata; it does not download an app
+after its initial local Widevine inspection. **Settings > Updates** provides
+**Check for updates**. This request reads public GitHub metadata; it does not download an app
 package or change Widevine. Failed/offline checks leave the app usable.
 
 If a newer compatible GUI package, manifest and signature are published, the
-footer shows **Update to VERSION**. Click it, then confirm **Update and restart**.
+footer shows a highlighted, underlined **Update available - VERSION** link.
+It opens **Settings > Updates**, where **Update to VERSION** leads to the
+**Update and restart** confirmation. Update status and progress stay on that page.
 The app downloads the manifest/signature, verifies the embedded RSA public key,
 then checks the ZIP and every payload file before scheduling replacement.
 The helper pins the parent process, waits for it to exit, verifies the staged
@@ -24,7 +26,7 @@ matching asset names, manifest and signature.
 
 Version **0.1.2** introduces GUI self-updates. Download this GUI once manually:
 the previous 0.1.1 GUI preview does not contain the update feature. Subsequent
-stable versions with signed GUI packages can be installed from the footer.
+stable versions with signed GUI packages can be installed from Settings > Updates.
 Do not overwrite an existing release with different binaries using the same
 version. Increase the project version for each new update.
 
@@ -62,7 +64,7 @@ Linux backup AppImage) also accepts `--restore-app ABSOLUTE_ORIGINAL_PATH`.
 Use the actual original canonical filename. Recovery validates the private
 journal and known backup before restoring it; it preserves unexpected files.
 To opt out of the automatic startup metadata request, set
-`HELIUM_FIXER_DISABLE_UPDATE_CHECK=1`; the manual footer check still works.
+`HELIUM_FIXER_DISABLE_UPDATE_CHECK=1`; the manual check in Settings still works.
 
 ## Build, signing and publication
 
