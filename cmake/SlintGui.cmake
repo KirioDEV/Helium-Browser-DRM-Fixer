@@ -36,7 +36,29 @@ if(MSVC)
 endif()
 
 add_executable(helium_drm_fixer_gui ui/main.cpp)
-target_link_libraries(helium_drm_fixer_gui PRIVATE fixer_core Slint::Slint)
+# Link every GUI updater object directly, before the shared core archive. This
+# prevents the CLI identity from being selected by static-library link order.
+add_library(fixer_gui_update OBJECT ${FIXER_APP_UPDATE_SOURCES})
+target_compile_definitions(fixer_gui_update PRIVATE FIXER_GUI_APP)
+target_include_directories(fixer_gui_update PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
+target_link_libraries(fixer_gui_update PRIVATE fixer_core miniz)
+target_link_libraries(helium_drm_fixer_gui PRIVATE fixer_gui_update fixer_core Slint::Slint)
+if(BUILD_TESTING)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    find_program(FIXER_OPENSSL_EXECUTABLE NAMES openssl
+        HINTS "C:/Program Files/Git/mingw64/bin" "C:/Program Files/Git/usr/bin")
+    if(NOT FIXER_OPENSSL_EXECUTABLE)
+        message(FATAL_ERROR "GUI update tests require the OpenSSL executable")
+    endif()
+    add_executable(fixer_gui_update_tests tests/gui_update_fixture.cpp)
+    target_link_libraries(fixer_gui_update_tests PRIVATE fixer_gui_update fixer_core)
+    if(MINGW)
+        target_compile_options(fixer_gui_update_tests PRIVATE -mcrtdll=ucrt)
+        target_link_options(fixer_gui_update_tests PRIVATE -mcrtdll=ucrt -static -static-libgcc -static-libstdc++)
+        target_link_libraries(fixer_gui_update_tests PRIVATE
+            "-Wl,--start-group" mingw32 mingwex pthread ucrt "-Wl,--end-group")
+    endif()
+endif()
 slint_target_sources(helium_drm_fixer_gui ui/app-window.slint)
 set_target_properties(helium_drm_fixer_gui PROPERTIES
     WIN32_EXECUTABLE TRUE
@@ -67,4 +89,4 @@ elseif(MINGW)
     target_link_libraries(helium_drm_fixer_gui PRIVATE
         "-Wl,--start-group" mingw32 mingwex pthread ucrt "-Wl,--end-group")
 endif()
-# This prototype is deliberately not installed into signed app-update packages.
+# GUI packages wrap the finished standalone payload after platform packaging.

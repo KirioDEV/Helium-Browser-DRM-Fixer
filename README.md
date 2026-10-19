@@ -1,11 +1,12 @@
 # Helium DRM Fixer (C++20)
 
-Eine erste optionale Slint-Oberfläche wird entwickelt:
-[GUI bauen und testen](ui/README.md). Die veröffentlichten Downloads sind
-weiterhin die CLI-Ausgabe.
+Eine optionale Slint-Oberfläche ergänzt die CLI:
+[GUI bauen und testen](ui/README.md). Beide Ausgaben haben getrennte Update-Pakete.
 Der separate Workflow „Build GUI previews“ bereitet eine portable Windows-GUI-EXE
 und ein Linux-AppImage für GUI-Testreleases vor:
 [Windows-Testanleitung](ui/WINDOWS_TESTING.md), [Linux-Testanleitung](ui/LINUX_TESTING.md).
+Ab GUI-Version 0.1.2 sind signierte App-Updates über die Versionszeile vorbereitet:
+[GUI-Updates und Veröffentlichung](ui/APP_UPDATES.md).
 
 Konsolenprogramm für Windows 11 x64 und native Linux-x86_64-Installationen.
 Es beschafft Widevine aus dem Google-Komponentenupdate, prüft SHA-256 und
@@ -370,7 +371,7 @@ Aus einem mit `cmake --install` vorbereiteten Verzeichnis erzeugt das Tool
 
 ```powershell
 New-Item -ItemType Directory -Path build/release-files -Force
-python tools/package_app_release.py --staging build/package --version 0.1.1 --platform windows-x64 --output build/release-files
+python tools/package_app_release.py --staging build/package --version 0.1.2 --platform windows-x64 --output build/release-files
 ```
 
 Unter Linux das Verzeichnis mit `mkdir -p build/release-files` anlegen und

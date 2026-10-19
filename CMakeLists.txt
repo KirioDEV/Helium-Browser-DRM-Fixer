@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(helium_drm_fixer VERSION 0.1.1 LANGUAGES C CXX)
+project(helium_drm_fixer VERSION 0.1.2 LANGUAGES C CXX)
 if(NOT WIN32 AND NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
     message(FATAL_ERROR "Supported platforms: Windows 11 and Linux")
 endif()
@@ -59,7 +59,12 @@ if(FIXER_APP_UPDATE_PUBLIC_KEY)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${FIXER_APP_UPDATE_PUBLIC_KEY}")
 endif()
 configure_file(cmake/app_update_trust.hpp.in generated/app_update_trust.hpp @ONLY)
-add_library(fixer_core src/core.cpp src/status.cpp src/operation.cpp src/app_update.cpp src/app_download.cpp src/app_manifest.cpp src/app_inspect.cpp src/app_stage.cpp src/app_handoff.cpp src/app_install.cpp src/app_process.cpp src/platform.cpp src/directory.cpp src/network.cpp src/package.cpp src/install.cpp)
+set(FIXER_APP_UPDATE_SOURCES src/app_update.cpp src/app_download.cpp
+    src/app_manifest.cpp src/app_inspect.cpp src/app_stage.cpp src/app_handoff.cpp
+    src/app_install.cpp src/app_process.cpp)
+add_library(fixer_core src/core.cpp src/status.cpp src/operation.cpp
+    ${FIXER_APP_UPDATE_SOURCES} src/platform.cpp src/directory.cpp
+    src/network.cpp src/package.cpp src/install.cpp)
 target_include_directories(fixer_core PUBLIC include)
 target_include_directories(fixer_core PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_link_libraries(fixer_core PUBLIC nlohmann_json::nlohmann_json PRIVATE miniz)
@@ -140,6 +145,13 @@ if(BUILD_TESTING)
         find_program(FIXER_OPENSSL_EXECUTABLE NAMES openssl
             HINTS "C:/Program Files/Git/mingw64/bin" "C:/Program Files/Git/usr/bin")
         if(FIXER_OPENSSL_EXECUTABLE)
+            if(TARGET fixer_gui_update_tests)
+                add_test(NAME gui_signed_updates COMMAND "${Python3_EXECUTABLE}"
+                    "${CMAKE_SOURCE_DIR}/tests/gui_updates.py"
+                    --helper "$<TARGET_FILE:fixer_gui_update_tests>"
+                    --openssl "${FIXER_OPENSSL_EXECUTABLE}")
+                set_tests_properties(gui_signed_updates PROPERTIES TIMEOUT 120)
+            endif()
             add_test(NAME ci_release_signing COMMAND "${Python3_EXECUTABLE}"
                 "${CMAKE_SOURCE_DIR}/tests/ci_release_signing.py"
                 --openssl "${FIXER_OPENSSL_EXECUTABLE}")

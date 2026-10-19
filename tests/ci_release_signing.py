@@ -99,6 +99,12 @@ class ProvenanceTests(unittest.TestCase):
                 signing.validate_run(run, run_id, signing.REPOSITORY, sha)
 
     def test_signing_and_cleanup(self):
+        self._exercise_signing_and_cleanup(False)
+
+    def test_gui_signing_and_cleanup(self):
+        self._exercise_signing_and_cleanup(True)
+
+    def _exercise_signing_and_cleanup(self, gui):
         with tempfile.TemporaryDirectory(prefix="helium-ci-signing-test-") as temporary:
             root = Path(temporary)
             key = root / "ephemeral.pem"
@@ -119,7 +125,7 @@ class ProvenanceTests(unittest.TestCase):
             for platform in signing.ARTIFACTS:
                 windows = platform == "windows-x64"
                 staging = root / ("staging-" + platform)
-                executable = staging / "bin" / ("helium_drm_fixer.exe" if windows else "helium_drm_fixer")
+                executable = staging / "bin" / ("helium_drm_fixer_gui.exe" if windows else "helium_drm_fixer_gui.AppImage") if gui else staging / "bin" / ("helium_drm_fixer.exe" if windows else "helium_drm_fixer")
                 executable.parent.mkdir(parents=True)
                 binary = bytearray(128)
                 if windows:
@@ -130,6 +136,8 @@ class ProvenanceTests(unittest.TestCase):
                 else:
                     binary[:7] = b"\x7fELF\x02\x01\x01"
                     binary[16:20] = b"\x02\0\x3e\0"
+                    if gui:
+                        binary[8:11] = b"AI\x02"
                 executable.write_bytes(binary)
                 for name in ("README.md", "LICENSE", "licenses/nlohmann-json-MIT.txt", "licenses/miniz-MIT.txt"):
                     path = staging / SHARE / name
@@ -137,7 +145,7 @@ class ProvenanceTests(unittest.TestCase):
                     path.write_text("Synthetic test license\n", encoding="utf-8")
                 folder = inputs / platform
                 folder.mkdir()
-                paths = build_release(staging, "0.1.1", platform, folder)
+                paths = build_release(staging, "0.1.1", platform, folder, gui=gui)
                 originals[platform] = {path.name: path.read_bytes() for path in paths}
             pem = key.read_text(encoding="ascii")
             secrets = {"RELEASE_SIGNING_KEY_PEM": pem, "RELEASE_SIGNING_KEY_PASSPHRASE": password}
@@ -151,7 +159,7 @@ class ProvenanceTests(unittest.TestCase):
                 zip_path.write_bytes(original_zip + b"tampered")
                 with patch.dict(os.environ, secrets), patch.object(signing.tempfile, "TemporaryDirectory") as factory:
                     with self.assertRaises(ValueError):
-                        signing.sign(OPENSSL)
+                        signing.sign(OPENSSL, gui=gui)
                     factory.assert_not_called()
                 zip_path.write_bytes(original_zip)
                 temporary_keys = []
@@ -164,20 +172,21 @@ class ProvenanceTests(unittest.TestCase):
 
                 with patch.dict(os.environ, secrets), \
                         patch.object(signing.tempfile, "TemporaryDirectory", side_effect=record_directory):
-                    signing.sign(OPENSSL)
+                    signing.sign(OPENSSL, gui=gui)
                     self.assertNotIn("RELEASE_SIGNING_KEY_PEM", os.environ)
                     self.assertNotIn("RELEASE_SIGNING_KEY_PASSPHRASE", os.environ)
                 self.assertTrue(temporary_keys)
                 self.assertTrue(all(not directory.exists() for directory in temporary_keys))
                 files = [path for path in outputs.rglob("*") if path.is_file()]
-                self.assertEqual(len(files), 8)
+                self.assertEqual(len(files), 11 if gui else 8)
                 notes = (outputs / "release-notes.md").read_text(encoding="utf-8")
-                self.assertIn("/releases/download/v0.1.1/helium_drm_fixer.exe", notes)
+                standalone = "helium_drm_fixer_gui.exe" if gui else "helium_drm_fixer.exe"
+                self.assertIn("/releases/download/v0.1.1/" + standalone, notes)
                 self.assertLess(notes.index("herunterladen (.exe)"), notes.index("<details>"))
                 with zipfile.ZipFile(io.BytesIO(next(
                         data for name, data in originals["windows-x64"].items() if name.endswith(".zip")))) as archive:
-                    self.assertEqual((outputs / "windows-x64" / "helium_drm_fixer.exe").read_bytes(),
-                                     archive.read("bin/helium_drm_fixer.exe"))
+                    self.assertEqual((outputs / "windows-x64" / standalone).read_bytes(),
+                                     archive.read("bin/" + standalone))
                 for platform, original in originals.items():
                     for name, data in original.items():
                         self.assertEqual((outputs / platform / name).read_bytes(), data)
@@ -187,14 +196,14 @@ class ProvenanceTests(unittest.TestCase):
                                     "-signature", str(signature), "-sigopt", "rsa_padding_mode:pkcs1"],
                                    input=DOMAIN + manifest.read_bytes(), capture_output=True, check=True, timeout=20)
                 with patch.dict(os.environ, secrets), self.assertRaises(ValueError):
-                    signing.sign(OPENSSL)
+                    signing.sign(OPENSSL, gui=gui)
                 # OpenSSL failure must also remove the temporary key and password.
                 bad_secrets = dict(secrets, RELEASE_SIGNING_KEY_PASSPHRASE="wrong test password")
                 failed_output = root / "failed-signing"
                 with patch.dict(os.environ, bad_secrets), patch.object(signing, "OUTPUT", failed_output), \
                         patch.object(signing.tempfile, "TemporaryDirectory", side_effect=record_directory):
                     with self.assertRaises(ValueError):
-                        signing.sign(OPENSSL)
+                        signing.sign(OPENSSL, gui=gui)
                     self.assertNotIn("RELEASE_SIGNING_KEY_PEM", os.environ)
                     self.assertNotIn("RELEASE_SIGNING_KEY_PASSPHRASE", os.environ)
                 self.assertTrue(all(not directory.exists() for directory in temporary_keys))

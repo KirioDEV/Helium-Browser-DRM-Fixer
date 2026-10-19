@@ -41,10 +41,10 @@ try {
         -DFIXER_BUILD_GUI=ON -DBUILD_TESTING=ON `
         '-DFIXER_APP_UPDATE_PUBLIC_KEY:FILEPATH=keys/app-update-public.der'
     if ($LASTEXITCODE -ne 0) { throw 'GUI-Konfiguration fehlgeschlagen.' }
-    & $cmake --build build/gui --target helium_drm_fixer_gui --parallel 4
+    & $cmake --build build/gui --target helium_drm_fixer_gui fixer_gui_update_tests --parallel 4
     if ($LASTEXITCODE -ne 0) { throw 'GUI-Build fehlgeschlagen.' }
     if ($Test) {
-        & $ctest --test-dir build/gui -R '^gui_readonly_startup$' --output-on-failure
+        & $ctest --test-dir build/gui -R '^gui_(readonly_startup|signed_updates)$' --output-on-failure
         if ($LASTEXITCODE -ne 0) { throw 'GUI-Test fehlgeschlagen.' }
     }
     Write-Host 'GUI: build/gui/helium_drm_fixer_gui.exe'

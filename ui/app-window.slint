@@ -23,6 +23,9 @@ export component AppWindow inherits Window {
     in property <string> status-detail: "Reading the local Widevine status.";
     in property <string> phase;
     in property <string> app-version;
+    in property <bool> update-available;
+    in property <string> update-version;
+    in property <string> update-status;
     // Settings is the top-level navigation menu; Help and About are its pages.
     in-out property <int> page: 0;
     private property <int> confirmation: 0;
@@ -34,6 +37,8 @@ export component AppWindow inherits Window {
     callback restore();
     callback cancel();
     callback target-edited();
+    callback check-app-update();
+    callback update-app();
 
     init => { Palette.color-scheme = root.dark ? ColorScheme.dark : ColorScheme.light; }
     changed dark => { Palette.color-scheme = root.dark ? ColorScheme.dark : ColorScheme.light; }
@@ -110,17 +115,20 @@ export component AppWindow inherits Window {
                         VerticalBox {
                             padding: 14px; spacing: 10px;
                             Text {
-                                text: root.confirmation == 1
+                                text: root.confirmation == 3
+                                    ? "Install signed app update " + root.update-version + " and restart? The previous app version will be kept as a backup."
+                                    : root.confirmation == 1
                                     ? "Verify Widevine from Google and install it in the folder above? Your current state will be backed up."
                                     : "Restore the previous Widevine state in the folder above?";
                                 color: root.ink; wrap: word-wrap;
                             }
-                            Text { text: "Close Helium and Chrome completely before continuing."; color: root.muted; wrap: word-wrap; }
+                            Text { text: root.confirmation == 3 ? "Only this app is updated. Your Widevine installation stays as it is." : "Close Helium and Chrome completely before continuing."; color: root.muted; wrap: word-wrap; }
                             HorizontalBox {
                                 Button {
-                                    text: "Confirm"; primary: true;
+                                    text: root.confirmation == 3 ? "Update and restart" : "Confirm"; primary: true;
                                     clicked => {
-                                        if root.confirmation == 1 { root.install(); }
+                                        if root.confirmation == 3 { root.update-app(); }
+                                        else if root.confirmation == 1 { root.install(); }
                                         else { root.restore(); }
                                         root.confirmation = 0;
                                     }
@@ -202,6 +210,26 @@ export component AppWindow inherits Window {
                 vertical-stretch: 0;
             }
         }
-        Text { text: "Version " + root.app-version + " · UI preview"; color: root.muted; font-size: 12px; }
+        HorizontalBox {
+            padding: 0px; spacing: 8px;
+            Text {
+                text: "Version " + root.app-version;
+                color: root.muted; font-size: 12px; vertical-alignment: center;
+                horizontal-stretch: 0;
+            }
+            Text {
+                text: root.update-status; color: root.update-available ? #8e9dff : root.muted;
+                font-size: 11px; wrap: word-wrap; vertical-alignment: center;
+            }
+            Button {
+                text: root.update-available ? "Update to " + root.update-version : "Check updates";
+                height: 32px; horizontal-stretch: 0;
+                enabled: !root.busy && root.confirmation == 0;
+                clicked => {
+                    if root.update-available { root.page = 0; root.confirmation = 3; }
+                    else { root.check-app-update(); }
+                }
+            }
+        }
     }
 }

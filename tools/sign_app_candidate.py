@@ -20,7 +20,8 @@ import zlib
 
 from package_app_release import (DOCUMENTS, DOMAIN, LIMIT, PLATFORMS, REPOSITORY, SHARE,
                                  openssl, read_regular, rsa_signature_size, safe_directory,
-                                 sign_manifest, validate_binary, version_parts)
+                                 sign_manifest, validate_binary, version_parts,
+                                 app_identity, app_executable, package_name)
 
 
 def require(condition, message):
@@ -75,14 +76,15 @@ def inspect_candidate(candidate):
         "schema_version", "app_id", "repository", "version", "platform", "package", "files"
     }, "Invalid candidate manifest schema")
     require(type(value["schema_version"]) is int and value["schema_version"] == 1 and
-            value["app_id"] == "helium-drm-fixer-cpp" and value["repository"] == REPOSITORY,
+            value["app_id"] in (app_identity(), app_identity(True)) and value["repository"] == REPOSITORY,
             "Wrong candidate identity")
     require(isinstance(value["version"], str) and isinstance(value["platform"], str),
             "Invalid candidate version/platform")
     version_parts(value["version"])
     platform = value["platform"]
     require(platform in PLATFORMS, "Unsupported candidate platform")
-    expected_name = f"helium-drm-fixer-cpp-{value['version']}-{platform}.zip"
+    gui = value["app_id"] == app_identity(True)
+    expected_name = package_name(value["version"], platform, gui)
     package = value["package"]
     require(isinstance(package, dict) and set(package) == {"name", "size", "sha256"} and
             package["name"] == expected_name == candidate.name, "Candidate name mismatch")
@@ -92,7 +94,7 @@ def inspect_candidate(candidate):
     require(len(package_bytes) == size and hashlib.sha256(package_bytes).hexdigest() == digest(package["sha256"]),
             "Candidate ZIP size/hash mismatch")
     windows = platform == "windows-x64"
-    executable = "bin/helium_drm_fixer" + (".exe" if windows else "")
+    executable = app_executable(platform, gui)
     allowed = DOCUMENTS | {executable}
     files = value["files"]
     require(isinstance(files, list) and 0 < len(files) <= 256, "Invalid candidate file inventory")
@@ -134,6 +136,8 @@ def inspect_candidate(candidate):
                         "ZIP file hash/size mismatch")
                 if path == executable:
                     validate_binary(data, windows)
+                    require(not gui or windows or data[8:11] == b"AI\x02",
+                            "GUI candidate is not a Type-2 AppImage")
     except (zipfile.BadZipFile, NotImplementedError, RuntimeError, EOFError, zlib.error) as error:
         raise ValueError("Invalid candidate ZIP") from error
     return value, manifest_bytes, package_bytes

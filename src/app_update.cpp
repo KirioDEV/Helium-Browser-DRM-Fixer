@@ -2,6 +2,8 @@
 
 #include <charconv>
 
+#include "app_identity.hpp"
+
 namespace fixer {
 std::array<std::uint32_t, 3> app_version_parts(const std::string &version) {
   require(!version.empty() && version.size() <= 32, "Invalid app version");
@@ -33,7 +35,7 @@ std::string app_package_name(const std::string &version) {
 #else
   constexpr auto platform = "linux-x86_64-ubuntu24.04";
 #endif
-  return "helium-drm-fixer-cpp-" + version + "-" + platform + ".zip";
+  return std::string(app_update_id) + "-" + version + "-" + platform + ".zip";
 }
 
 AppUpdateStatus parse_app_update(const HttpResponse &response,
@@ -98,6 +100,29 @@ AppUpdateStatus parse_app_update(const HttpResponse &response,
                 package->at("size").get<std::uint64_t>() <= 128 * 1024 * 1024,
             "Invalid app update package metadata");
     result.package_name = name;
+#ifdef FIXER_GUI_APP
+    for (const auto &suffix :
+         {std::string(".manifest.json"), std::string(".manifest.sig")}) {
+      const Json *companion = nullptr;
+      for (const auto &asset : assets) {
+        if (asset.at("name") != name + suffix) continue;
+        require(!companion, "Duplicate GUI update companion");
+        companion = &asset;
+      }
+      if (!companion) {
+        result.state = AppUpdateState::no_compatible_package;
+        return result;
+      }
+      require(companion->at("state") == "uploaded" &&
+                  companion->at("browser_download_url") == download + suffix &&
+                  companion->at("size").is_number_unsigned(),
+              "Invalid GUI update companion metadata");
+      const auto size = companion->at("size").get<std::uint64_t>();
+      require(suffix == ".manifest.sig" ? (size == 384 || size == 512)
+                                        : (size > 0 && size <= 65536),
+              "Invalid GUI update companion size");
+    }
+#endif
     result.state = AppUpdateState::update_available;
     result.exit_code = 0;
   } catch (const Json::exception &) {

@@ -1,0 +1,71 @@
+name: Sign GUI app release
+run-name: Sign GUI candidates from build ${{ inputs.build_run_id }}
+on:
+  workflow_call:
+    inputs:
+      build_run_id:
+        required: true
+        type: string
+      build_source_sha:
+        required: true
+        type: string
+    secrets:
+      RELEASE_SIGNING_KEY_PEM:
+        required: true
+      RELEASE_SIGNING_KEY_PASSPHRASE:
+        required: true
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: Successful main push run ID from Build GUI previews (same commit)
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: gui-release-signing
+  cancel-in-progress: false
+jobs:
+  sign:
+    if: >-
+      github.repository == 'KirioDEV/Helium-Browser-DRM-Fixer' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: release-signing
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.build_source_sha || github.sha }}
+      - name: Validate successful build and download exact candidates
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_RUN_ID: ${{ inputs.build_run_id }}
+          BUILD_SOURCE_SHA: ${{ inputs.build_source_sha || github.sha }}
+        run: python3 tools/ci_release_signing.py download --gui
+      - name: Sign both candidates with the pinned release key
+        env:
+          RELEASE_SIGNING_KEY_PEM: ${{ secrets.RELEASE_SIGNING_KEY_PEM }}
+          RELEASE_SIGNING_KEY_PASSPHRASE: ${{ secrets.RELEASE_SIGNING_KEY_PASSPHRASE }}
+        run: python3 tools/ci_release_signing.py sign --gui
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: signed-gui-app-release
+          path: |
+            build/signed-release/*/*
+            build/signed-release/release-notes.md
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: signed-windows-gui-x64-standalone-exe
+          path: build/signed-release/windows-x64/helium_drm_fixer_gui.exe
+          if-no-files-found: error
+          retention-days: 14
+      - name: Release handoff
+        run: |
+          echo '### Signed GUI Windows and Linux packages' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Download signed-gui-app-release. Extract the outer artifact ZIP and manually upload both GUI ZIP/manifest/signature triples plus the standalone EXE/AppImage and checksums to the matching stable release. Copy release-notes.md into the release description. GUI and CLI packages have separate signed identities. No release was published.' >> "$GITHUB_STEP_SUMMARY"

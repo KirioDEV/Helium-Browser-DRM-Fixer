@@ -53,6 +53,8 @@ AppPackageManifest verify_app_manifest(std::span<const unsigned char> manifest,
                                        std::span<const unsigned char> signature,
                                        const std::string &expected_version);
 bool app_update_key_configured();
+// GUI AppImages must have a valid x86_64 ELF header and Type-2 runtime marker.
+void validate_app_payload(std::span<const unsigned char> bytes, bool executable);
 
 // Offline release inspection with the build-time trust root. Accepts current
 // or older versions for release checks, but never installs or executes files.

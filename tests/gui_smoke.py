@@ -15,6 +15,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix="helium-gui-") as temporary:
         root = Path(temporary)
         environment = {key.upper(): value for key, value in os.environ.items()}
+        environment["HELIUM_FIXER_DISABLE_UPDATE_CHECK"] = "1"
         for name in ("LOCALAPPDATA", "USERPROFILE", "HOME", "XDG_CONFIG_HOME",
                      "XDG_CACHE_HOME", "APPDATA", "ProgramFiles", "ProgramFiles(x86)"):
             directory = root / name.lower()

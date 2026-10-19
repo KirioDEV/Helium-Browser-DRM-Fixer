@@ -1,3 +1,4 @@
+#include "app_identity.hpp"
 #include "app_update.hpp"
 
 namespace fixer {
@@ -7,7 +8,7 @@ Json inspect(const fs::path &input, Verify verify) {
   check_cancelled();
   const auto package = fs::absolute(input).lexically_normal();
   const auto name = utf8(package.filename());
-  const std::string prefix = "helium-drm-fixer-cpp-";
+  const std::string prefix = std::string(app_update_id) + "-";
 #ifdef _WIN32
   const std::string suffix = "-windows-x64.zip";
 #else

@@ -12,6 +12,7 @@ import zipfile
 
 from collect_gui_licenses import collect
 from windows_gui_resources import embed_notices, verify_notices
+from package_gui_release import gui_candidate
 
 ROOT = Path(__file__).resolve().parent.parent
 ICON = "io.github.KirioDEV.HeliumDRMFixer.svg"
@@ -63,6 +64,8 @@ def package(build, output):
         hashlib.sha256(executable.read_bytes()).hexdigest() + "  " + executable.name + "\n", encoding="ascii")
     shutil.copyfile(ROOT / f"ui/linux/{ICON}", output / ICON)
     shutil.copyfile(ROOT / "ui/WINDOWS_TESTING.md", output / "WINDOWS_TESTING.md")
+    shutil.copyfile(ROOT / "ui/APP_UPDATES.md", output / "APP_UPDATES.md")
+    gui_candidate(build, executable, version, "windows-x64", output / "update-candidate")
     commit = os.environ.get("GITHUB_SHA")
     if commit is not None and not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise ValueError("Invalid source commit metadata")
@@ -72,7 +75,7 @@ def package(build, output):
         "executable": executable.name, "notice_resource": 104,
         "embedded_notices_sha256": hashlib.sha256(data).hexdigest()}, indent=2) + "\n", encoding="utf-8")
     print(f"Standalone GUI preview ready: {executable}")
-    print("Preview only: not an app-update package and not published.")
+    print("Unsigned GUI update candidate prepared. No release was published.")
 
 
 if __name__ == "__main__":

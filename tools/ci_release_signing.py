@@ -1,6 +1,7 @@
 """Sign existing successful main CI candidates; never publish or execute them."""
 
 import argparse
+import hashlib
 import io
 import json
 import os
@@ -10,7 +11,7 @@ import subprocess
 import tempfile
 import zipfile
 
-from package_app_release import REPOSITORY, read_regular
+from package_app_release import REPOSITORY, read_regular, app_identity, app_executable, package_name
 from sign_app_candidate import inspect_candidate, require, sign_candidate
 
 
@@ -19,11 +20,15 @@ ARTIFACTS = {
     "windows-x64": "windows-x64-unsigned-update-candidate",
     "linux-x86_64-ubuntu24.04": "linux-x86_64-unsigned-update-candidate",
 }
+GUI_ARTIFACTS = {
+    "windows-x64": "windows-gui-unsigned-update-candidate",
+    "linux-x86_64-ubuntu24.04": "linux-gui-unsigned-update-candidate",
+}
 INPUT = ROOT / "build" / "signing-input"
 OUTPUT = ROOT / "build" / "signed-release"
 
 
-def validate_run(run, run_id, repository, sha, current_run_id=None):
+def validate_run(run, run_id, repository, sha, current_run_id=None, gui=False):
     require(repository == REPOSITORY, "Signing is restricted to the release repository")
     require(re.fullmatch(r"[1-9][0-9]*", run_id) is not None, "Invalid build run ID")
     require(re.fullmatch(r"[0-9a-f]{40}", sha) is not None, "Invalid source commit")
@@ -35,36 +40,38 @@ def validate_run(run, run_id, repository, sha, current_run_id=None):
     require(type(run.get("id")) is int and str(run["id"]) == run_id and (completed or current) and
             run.get("event") == "push" and run.get("head_branch") == "main" and
             run.get("head_sha") == sha and
-            run.get("path") == ".github/workflows/build.yml" and
+            run.get("path") == (".github/workflows/gui-preview.yml" if gui else ".github/workflows/build.yml") and
             run.get("repository", {}).get("full_name") == repository and
             run.get("head_repository", {}).get("full_name") == repository,
             "Expected a successful main push build from this exact repository and commit")
 
 
-def validate_build_jobs(value):
+def validate_build_jobs(value, gui=False):
     jobs = value.get("jobs", [])
     require(type(value.get("total_count")) is int and value["total_count"] == len(jobs),
             "Incomplete build job metadata")
-    for name in ("windows", "linux (gcc)", "linux (clang)"):
+    for name in (("windows-gui", "linux-gui") if gui else ("windows", "linux (gcc)", "linux (clang)")):
         matching = [job for job in jobs if job.get("name") == name]
         require(len(matching) == 1 and matching[0].get("status") == "completed" and
                 matching[0].get("conclusion") == "success",
-                "All Windows/GCC/Clang jobs must have completed successfully before signing")
+                "All required build jobs must have completed successfully before signing")
 
 
-def candidates(directory, version):
+def candidates(directory, version, gui=False):
+    artifacts = GUI_ARTIFACTS if gui else ARTIFACTS
     result = []
-    require({entry.name for entry in directory.iterdir()} == set(ARTIFACTS),
+    require({entry.name for entry in directory.iterdir()} == set(artifacts),
             "Expected exactly both platform directories")
-    for platform in ARTIFACTS:
+    for platform in artifacts:
         folder = directory / platform
         require(folder.is_dir() and not folder.is_symlink(), "Invalid platform directory")
-        name = f"helium-drm-fixer-cpp-{version}-{platform}.zip"
+        name = package_name(version, platform, gui)
         require({entry.name for entry in folder.iterdir()} == {name, name + ".manifest.json"},
                 "Unexpected candidate files/version")
         candidate = folder / name
         value, _, _ = inspect_candidate(candidate)
-        require(value["version"] == version and value["platform"] == platform,
+        require(value["version"] == version and value["platform"] == platform and
+                value["app_id"] == app_identity(gui),
                 "Candidate platform/version mismatch")
         result.append((platform, candidate))
     return result
@@ -77,7 +84,7 @@ def project_version():
     return match[1]
 
 
-def download():
+def download(gui=False):
     run_id = os.environ["BUILD_RUN_ID"]
     repository, sha = os.environ["GITHUB_REPOSITORY"], os.environ["BUILD_SOURCE_SHA"]
     require(re.fullmatch(r"[1-9][0-9]*", run_id) is not None, "Invalid build run ID")
@@ -86,26 +93,27 @@ def download():
     response = subprocess.run(["gh", "api", f"repos/{repository}/actions/runs/{run_id}"],
                               check=True, capture_output=True, timeout=60)
     run = json.loads(response.stdout)
-    validate_run(run, run_id, repository, sha, os.environ.get("GITHUB_RUN_ID"))
+    validate_run(run, run_id, repository, sha, os.environ.get("GITHUB_RUN_ID"), gui)
     if run.get("status") != "completed":
         response = subprocess.run(["gh", "api",
                                    f"repos/{repository}/actions/runs/{run_id}/jobs?filter=latest&per_page=100"],
                                   check=True, capture_output=True, timeout=60)
-        validate_build_jobs(json.loads(response.stdout))
+        validate_build_jobs(json.loads(response.stdout), gui)
     INPUT.parent.mkdir(exist_ok=True)
     INPUT.mkdir(mode=0o700)
-    for platform, artifact in ARTIFACTS.items():
+    for platform, artifact in (GUI_ARTIFACTS if gui else ARTIFACTS).items():
         subprocess.run(["gh", "run", "download", run_id, "--repo", repository,
                         "--name", artifact, "--dir", str(INPUT / platform)],
                        check=True, timeout=180)
-    candidates(INPUT, project_version())
-    print(f"Checked both candidates after successful Windows/GCC/Clang jobs in build {run_id} at {sha}")
+    candidates(INPUT, project_version(), gui)
+    label = "Windows/Linux GUI" if gui else "Windows/GCC/Clang"
+    print(f"Checked both candidates after successful {label} jobs in build {run_id} at {sha}")
 
 
-def sign(openssl_path="openssl"):
+def sign(openssl_path="openssl", gui=False):
     # Validate both complete inventories before materializing the private key.
     version = project_version()
-    selected = candidates(INPUT, version)
+    selected = candidates(INPUT, version, gui)
     require(not OUTPUT.exists(), "Signed output directory already exists")
     pem = os.environ.pop("RELEASE_SIGNING_KEY_PEM", "")
     require(bool(os.environ.get("RELEASE_SIGNING_KEY_PASSPHRASE")), "Missing passphrase secret")
@@ -132,16 +140,31 @@ def sign(openssl_path="openssl"):
     windows_package = next((OUTPUT / "windows-x64").glob("*.zip"))
     _, _, package_bytes = inspect_candidate(windows_package)
     with zipfile.ZipFile(io.BytesIO(package_bytes)) as archive:
-        executable_bytes = archive.read("bin/helium_drm_fixer.exe")
-    with (OUTPUT / "windows-x64" / "helium_drm_fixer.exe").open("xb") as stream:
+        executable_bytes = archive.read(app_executable("windows-x64", gui))
+    standalone = "helium_drm_fixer_gui.exe" if gui else "helium_drm_fixer.exe"
+    with (OUTPUT / "windows-x64" / standalone).open("xb") as stream:
         stream.write(executable_bytes)
+    if gui:
+        linux_package = next((OUTPUT / "linux-x86_64-ubuntu24.04").glob("*.zip"))
+        _, _, linux_bytes = inspect_candidate(linux_package)
+        with zipfile.ZipFile(io.BytesIO(linux_bytes)) as archive:
+            image = archive.read(app_executable("linux-x86_64-ubuntu24.04", True))
+        filename = "helium_drm_fixer_gui.AppImage"
+        (OUTPUT / "linux-x86_64-ubuntu24.04" / filename).write_bytes(image)
+        (OUTPUT / "linux-x86_64-ubuntu24.04" / (filename + ".sha256")).write_text(
+            hashlib.sha256(image).hexdigest() + "  " + filename + "\n", encoding="ascii")
+        (OUTPUT / "windows-x64" / (standalone + ".sha256")).write_text(
+            hashlib.sha256(executable_bytes).hexdigest() + "  " + standalone + "\n", encoding="ascii")
     base = f"https://github.com/{REPOSITORY}/releases/download/v{version}"
     notes = [f"# Helium DRM Fixer {version}", "",
-             f"**[Windows 11 x64 herunterladen (.exe)]({base}/helium_drm_fixer.exe)**", "",
-             "Standalone-Konsolenprogramm mit eingebundenen Laufzeitbibliotheken und Lizenzhinweisen.",
+             f"**[Windows 11 x64 herunterladen (.exe)]({base}/{standalone})**", "",
+             ("Grafische Anwendung mit signierten App-Updates. Linux: helium_drm_fixer_gui.AppImage."
+              if gui else "Standalone-Konsolenprogramm mit eingebundenen Laufzeitbibliotheken und Lizenzhinweisen."),
              "", "<details>", "<summary>Linux, Update-Pakete und Signaturen</summary>", ""]
-    for platform in ARTIFACTS:
-        name = f"helium-drm-fixer-cpp-{version}-{platform}.zip"
+    if gui:
+        notes[5:5] = [f"[Linux x86_64 herunterladen (.AppImage)]({base}/helium_drm_fixer_gui.AppImage)", ""]
+    for platform in (GUI_ARTIFACTS if gui else ARTIFACTS):
+        name = package_name(version, platform, gui)
         for suffix in ("", ".manifest.json", ".manifest.sig"):
             notes.append(f"- [{name}{suffix}]({base}/{name}{suffix})")
     notes.extend(["", "</details>", ""])
@@ -152,9 +175,10 @@ def sign(openssl_path="openssl"):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("operation", choices=("download", "sign"))
+    parser.add_argument("--gui", action="store_true")
     args = parser.parse_args()
     try:
-        {"download": download, "sign": sign}[args.operation]()
+        {"download": download, "sign": sign}[args.operation](gui=args.gui)
     except (ValueError, OSError, KeyError, subprocess.SubprocessError):
         # Do not render exception details originating from secrets or subprocesses.
         parser.exit(1, "Release signing failed; check build identity, candidate files and signing secrets.\n")

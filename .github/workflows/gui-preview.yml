@@ -12,6 +12,10 @@ on:
       - 'SECURITY.md'
       - 'THIRD_PARTY.md'
       - 'tools/*gui*'
+      - 'tools/package_app_release.py'
+      - 'tools/sign_app_candidate.py'
+      - 'tools/ci_release_signing.py'
+      - '.github/workflows/sign-gui-release.yml'
       - 'tests/gui*'
       - '.github/workflows/gui-preview.yml'
   pull_request:
@@ -26,12 +30,31 @@ on:
       - 'SECURITY.md'
       - 'THIRD_PARTY.md'
       - 'tools/*gui*'
+      - 'tools/package_app_release.py'
+      - 'tools/sign_app_candidate.py'
+      - 'tools/ci_release_signing.py'
+      - '.github/workflows/sign-gui-release.yml'
       - 'tests/gui*'
       - '.github/workflows/gui-preview.yml'
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
+  sign-gui-release:
+    needs: [windows-gui, linux-gui]
+    if: >-
+      github.repository == 'KirioDEV/Helium-Browser-DRM-Fixer' &&
+      github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/sign-gui-release.yml
+    with:
+      build_run_id: ${{ format('{0}', github.run_id) }}
+      build_source_sha: ${{ github.sha }}
+    secrets:
+      RELEASE_SIGNING_KEY_PEM: ${{ secrets.RELEASE_SIGNING_KEY_PEM }}
+      RELEASE_SIGNING_KEY_PASSPHRASE: ${{ secrets.RELEASE_SIGNING_KEY_PASSPHRASE }}
   windows-gui:
     runs-on: windows-2022
     timeout-minutes: 35
@@ -65,11 +88,16 @@ jobs:
           )
           & cmake @cmakeArguments
       - name: Build GUI
-        run: cmake --build build/gui --config Release --target helium_drm_fixer_gui --parallel 4
+        run: cmake --build build/gui --config Release --target helium_drm_fixer_gui fixer_gui_update_tests fixer_tests fixer_app_process_tests helium_drm_fixer --parallel 4
       - name: Isolated GUI interactions and portable startup
-        run: ctest --test-dir build/gui -C Release -R '^gui_readonly_startup$' --output-on-failure
+        run: ctest --test-dir build/gui -C Release -R '^(gui_readonly_startup|gui_signed_updates|security_and_transactions|signed_app_packages|ci_release_signing)$' --output-on-failure
       - name: Package standalone GUI with embedded notices and shared icon
         run: python tools/package_windows_gui.py --build build/gui --output build/windows-gui-preview
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-gui-unsigned-update-candidate
+          path: build/windows-gui-preview/update-candidate/*
+          if-no-files-found: error
       - name: Test packaged EXE without adjacent DLLs
         shell: pwsh
         run: |
@@ -88,6 +116,7 @@ jobs:
             build/windows-gui-preview/*.svg
             build/windows-gui-preview/gui-notices.zip
             build/windows-gui-preview/WINDOWS_TESTING.md
+            build/windows-gui-preview/APP_UPDATES.md
             build/windows-gui-preview/preview.json
           if-no-files-found: error
           retention-days: 14
@@ -125,6 +154,11 @@ jobs:
         run: bash tools/build_linux_gui.sh
       - name: Build AppImage preview with dependency notices
         run: python3 tools/package_linux_gui.py --build build/linux-gui --output build/linux-gui-preview
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux-gui-unsigned-update-candidate
+          path: build/linux-gui-preview/update-candidate/*
+          if-no-files-found: error
       - name: Test the packaged AppImage without FUSE or real browser changes
         run: |
           image=$(find build/linux-gui-preview -maxdepth 1 -name '*.AppImage' -print -quit)
@@ -132,6 +166,8 @@ jobs:
           env -u WAYLAND_DISPLAY SLINT_BACKEND=winit-software xvfb-run -a python3 tests/gui_smoke.py "$image" --appimage
           cd build/linux-gui-preview
           sha256sum -c ./*.sha256
+      - name: Real AppImage self-update and rollback with an ephemeral test key
+        run: python3 tools/test_gui_appimage.py --build build/linux-gui --preview build/linux-gui-preview --output build/gui-appimage-update-test
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: linux-gui-preview-ubuntu24.04-x86_64
@@ -139,6 +175,7 @@ jobs:
             build/linux-gui-preview/*.AppImage
             build/linux-gui-preview/*.sha256
             build/linux-gui-preview/LINUX_TESTING.md
+            build/linux-gui-preview/APP_UPDATES.md
             build/linux-gui-preview/preview.json
           if-no-files-found: error
           retention-days: 14

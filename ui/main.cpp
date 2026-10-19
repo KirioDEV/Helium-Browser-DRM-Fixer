@@ -1,10 +1,18 @@
 #include <chrono>
+#include <cstdlib>
 #include <iostream>
 #include <string>
 #include <thread>
 
 #include "app-window.h"
+#include "app_update.hpp"
 #include "fixer.hpp"
+#ifdef _WIN32
+// clang-format off
+#include <windows.h>
+#include <shellapi.h>
+// clang-format on
+#endif
 
 namespace {
 using fixer::LocalState;
@@ -87,13 +95,16 @@ void show_status(const slint::ComponentHandle<AppWindow>& ui,
 
 enum class Job { inspect, install, restore };
 
-int run_gui(bool smoke_test) {
+int run_gui(bool smoke_test, const std::string& update_result = "") {
   auto ui = AppWindow::create();
   const slint::ComponentWeakHandle<AppWindow> weak(ui);
   std::jthread worker;
   int smoke_result = 1;
   int smoke_inspections = 0;
+  bool startup_check = !smoke_test && update_result.empty() &&
+                       !std::getenv("HELIUM_FIXER_DISABLE_UPDATE_CHECK");
   ui->set_app_version(FIXER_VERSION);
+  ui->set_update_status(slint::SharedString(update_result));
 
   auto start = [&](Job job) {
     if (ui->get_busy()) return;
@@ -114,7 +125,7 @@ int run_gui(bool smoke_test) {
                                       : "Starting operation…");
     try {
       worker = std::jthread([weak, options, job, smoke_test, &smoke_result,
-                             &smoke_inspections] {
+                             &smoke_inspections, &startup_check] {
         std::string message;
         try {
           if (job != Job::inspect) {
@@ -147,11 +158,16 @@ int run_gui(bool smoke_test) {
           status.detail = error.what();
         }
         slint::invoke_from_event_loop([weak, status, message, smoke_test, job,
-                                       &smoke_result, &smoke_inspections] {
+                                       &smoke_result, &smoke_inspections,
+                                       &startup_check] {
           if (auto window = weak.lock()) {
             show_status(*window, status);
             (*window)->set_phase(slint::SharedString(message));
             (*window)->set_busy(false);
+            if (startup_check) {
+              startup_check = false;
+              (*window)->invoke_check_app_update();
+            }
             if (smoke_test && job == Job::inspect) {
               if (++smoke_inspections < 4) {
                 (*window)->invoke_inspect();
@@ -184,6 +200,83 @@ int run_gui(bool smoke_test) {
                                         std::string(error.what())));
     }
   };
+
+  auto app_update = [&](bool install) {
+    if (ui->get_busy()) return;
+    if (worker.joinable()) worker.join();
+    if (install && !ui->get_update_available()) return;
+    const std::string expected = std::string(ui->get_update_version());
+    ui->set_busy(true);
+    ui->set_update_status(install ? "Downloading and verifying update…"
+                                  : "Checking for updates…");
+    fixer::cancelled.store(false);
+    try {
+      worker = std::jthread([weak, install, expected] {
+        std::string message;
+        bool available = false, scheduled = false;
+        std::string version;
+        try {
+          if (install) {
+            fixer::require(fixer::app_self_update_supported(),
+                           "Automatic updates are unavailable in this build");
+            const auto target = fixer::app_executable_path();
+            const auto hash =
+                fixer::sha256(fixer::read_file(target, fixer::file_limit));
+            const auto parent = fixer::app_update_jobs(target) / "packages";
+            fixer::create_private_dir(parent);
+            const auto prepared = fixer::prepare_app_update(parent);
+            fixer::require(prepared.manifest.version == expected,
+                           "The release changed. Check for updates again.");
+            (void)fixer::start_app_update(prepared.directory, expected, hash);
+            scheduled = true;
+          } else {
+            const auto status = fixer::check_app_update();
+            version = status.available_version;
+            switch (status.state) {
+              case fixer::AppUpdateState::update_available:
+                available = fixer::app_self_update_supported();
+                message = available
+                              ? "Update available"
+                              : "Update available; download a supported build";
+                break;
+              case fixer::AppUpdateState::current:
+                message = "Up to date";
+                break;
+              case fixer::AppUpdateState::installed_newer:
+                message = "Newer than the stable release";
+                break;
+              case fixer::AppUpdateState::no_public_release:
+                message = "No stable release yet";
+                break;
+              case fixer::AppUpdateState::no_compatible_package:
+                message = "No signed GUI update published";
+                break;
+            }
+          }
+        } catch (const std::exception& error) {
+          message = std::string(install ? "Update failed: "
+                                        : "Update check failed: ") +
+                    error.what();
+        }
+        fixer::cancelled.store(false);
+        slint::invoke_from_event_loop(
+            [weak, message, version, available, scheduled] {
+              if (auto window = weak.lock()) {
+                (*window)->set_update_status(slint::SharedString(message));
+                (*window)->set_update_version(slint::SharedString(version));
+                (*window)->set_update_available(available);
+                (*window)->set_busy(false);
+                if (scheduled) (*window)->window().hide();
+              }
+            });
+      });
+    } catch (const std::exception& error) {
+      ui->set_busy(false);
+      ui->set_update_status(slint::SharedString(error.what()));
+    }
+  };
+  ui->on_check_app_update([&] { app_update(false); });
+  ui->on_update_app([&] { app_update(true); });
 
   ui->on_inspect([&] { start(Job::inspect); });
   ui->on_install([&] { start(Job::install); });
@@ -218,8 +311,49 @@ int run_gui(bool smoke_test) {
 
 int main(int argc, char** argv) {
   try {
-    const bool smoke_test = argc == 2 && std::string(argv[1]) == "--smoke-test";
-    fixer::require(argc == 1 || smoke_test, "Unsupported GUI argument",
+    std::vector<std::string> arguments;
+#ifdef _WIN32
+    int count = 0;
+    auto wide = CommandLineToArgvW(GetCommandLineW(), &count);
+    fixer::require(wide != nullptr, "Cannot read GUI arguments");
+    for (int i = 1; i < count; ++i)
+      arguments.push_back(fixer::utf8(fixer::fs::path(wide[i])));
+    LocalFree(wide);
+    (void)argc;
+    (void)argv;
+#else
+    for (int i = 1; i < argc; ++i) arguments.emplace_back(argv[i]);
+#endif
+    if (arguments.size() == 2 && arguments[0] == "--internal-app-update")
+      return fixer::run_app_update_helper(fixer::from_utf8(arguments[1]));
+    if (arguments.size() == 2 && arguments[0] == "--verify-app-release") {
+      std::cout
+          << fixer::inspect_app_release(fixer::from_utf8(arguments[1])).dump()
+          << '\n';
+      return 0;
+    }
+    if (arguments.size() == 2 && arguments[0] == "--app-update-result") {
+      const auto result =
+          fixer::app_update_job_status(fixer::from_utf8(arguments[1]));
+      const auto state = result.at("state").get<std::string>();
+      const auto text =
+          state == "installed" ? "App updated successfully"
+          : state == "restored"
+              ? "Previous app version restored"
+              : "App update failed: " + result.at("detail").get<std::string>();
+      return run_gui(false, text);
+    }
+    if (arguments == std::vector<std::string>{"--restore-app"}) {
+      (void)fixer::start_app_restore(fixer::app_executable_path());
+      return 0;
+    }
+    if (arguments.size() == 2 && arguments[0] == "--restore-app") {
+      (void)fixer::start_app_restore(fixer::from_utf8(arguments[1]));
+      return 0;
+    }
+    const bool smoke_test =
+        arguments == std::vector<std::string>{"--smoke-test"};
+    fixer::require(arguments.empty() || smoke_test, "Unsupported GUI argument",
                    fixer::Code::invalid);
     return run_gui(smoke_test);
   } catch (const std::exception& error) {

@@ -70,7 +70,7 @@ std::vector<AppPackageFile> read_payload(const Directory &directory,
       total += bytes.size();
       const auto executable = file.at("executable").get<bool>();
       if (path.starts_with("bin/")) {
-        validate_binary(bytes, !executable);
+        validate_app_payload(bytes, executable);
 #ifdef _WIN32
         if (executable) {
           const auto offset = static_cast<std::size_t>(bytes[0x3c]) |

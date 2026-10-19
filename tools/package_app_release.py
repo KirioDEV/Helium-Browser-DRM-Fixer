@@ -24,6 +24,20 @@ SHARE = "share/helium-drm-fixer/"
 DOCUMENTS = {SHARE + name for name in (
     "README.md", "LICENSE", "SECURITY.md", "THIRD_PARTY.md",
     "licenses/nlohmann-json-MIT.txt", "licenses/miniz-MIT.txt")}
+
+
+def app_identity(gui=False):
+    return "helium-drm-fixer-gui" if gui else "helium-drm-fixer-cpp"
+
+
+def app_executable(platform, gui=False):
+    if gui:
+        return "bin/helium_drm_fixer_gui" + (".exe" if platform == "windows-x64" else ".AppImage")
+    return "bin/helium_drm_fixer" + (".exe" if platform == "windows-x64" else "")
+
+
+def package_name(version, platform, gui=False):
+    return f"{app_identity(gui)}-{version}-{platform}.zip"
 RUNTIMES = {"bin/" + name for name in (
     "libstdc++-6.dll", "libgcc_s_seh-1.dll", "libwinpthread-1.dll")}
 
@@ -146,7 +160,7 @@ def validate_binary(data, windows, library=False):
 
 
 def build_release(staging, version, platform, output, signing_key=None,
-                  openssl_path="openssl", password_env=None):
+                  openssl_path="openssl", password_env=None, gui=False):
     version_parts(version)
     if password_env and not signing_key:
         raise ValueError("A passphrase environment requires a signing key")
@@ -159,8 +173,8 @@ def build_release(staging, version, platform, output, signing_key=None,
                         Path(signing_key).resolve().is_relative_to(output)):
         raise ValueError("Keep private signing keys outside staging and release output")
     windows = platform == "windows-x64"
-    executable = "bin/helium_drm_fixer" + (".exe" if windows else "")
-    allowed = DOCUMENTS | {executable} | (RUNTIMES if windows else set())
+    executable = app_executable(platform, gui)
+    allowed = DOCUMENTS | {executable} | (RUNTIMES if windows and not gui else set())
     data, pending, total = {}, [staging], 0
     while pending:
         for path in sorted(pending.pop().iterdir()):
@@ -176,6 +190,8 @@ def build_release(staging, version, platform, output, signing_key=None,
             content = read_regular(path)
             if name == executable or name in RUNTIMES:
                 validate_binary(content, windows, name in RUNTIMES)
+                if gui and not windows and content[8:11] != b"AI\x02":
+                    raise ValueError("GUI updates require a Type-2 AppImage")
             total += len(content)
             if total > LIMIT or len(data) >= 256:
                 raise ValueError("Release contents exceed limits")
@@ -195,9 +211,9 @@ def build_release(staging, version, platform, output, signing_key=None,
     package = archive.getvalue()
     if not 0 < len(package) <= LIMIT:
         raise ValueError("Release ZIP exceeds size limit")
-    name = f"helium-drm-fixer-cpp-{version}-{platform}.zip"
+    name = package_name(version, platform, gui)
     manifest = json.dumps({
-        "schema_version": 1, "app_id": "helium-drm-fixer-cpp", "repository": REPOSITORY,
+        "schema_version": 1, "app_id": app_identity(gui), "repository": REPOSITORY,
         "version": version, "platform": platform,
         "package": {"name": name, "size": len(package), "sha256": hashlib.sha256(package).hexdigest()},
         "files": [{"path": path, "size": len(content), "sha256": hashlib.sha256(content).hexdigest(),
@@ -225,6 +241,7 @@ def main():
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--gui", action="store_true")
     parser.add_argument("--staging", type=Path, required=True)
     parser.add_argument("--version", required=True)
     parser.add_argument("--platform", choices=PLATFORMS, required=True)
@@ -235,7 +252,7 @@ def main():
     args = parser.parse_args()
     try:
         paths = build_release(args.staging, args.version, args.platform, args.output,
-                              args.signing_key, args.openssl, args.key_password_env)
+                              args.signing_key, args.openssl, args.key_password_env, args.gui)
     except (ValueError, OSError, subprocess.TimeoutExpired) as error:
         parser.exit(1, f"Release packaging failed: {error}\n")
     print("Signed release files:" if args.signing_key else "Unsigned candidate (not installable as trusted update):")

@@ -13,9 +13,9 @@ system fonts and a compatible graphics/input environment are required.
 In the download directory (replace the example filename with the actual file):
 
 ```sh
-sha256sum -c helium-drm-fixer-gui-0.1.1-linux-x86_64-ubuntu24.04.AppImage.sha256
-chmod u+x helium-drm-fixer-gui-0.1.1-linux-x86_64-ubuntu24.04.AppImage
-./helium-drm-fixer-gui-0.1.1-linux-x86_64-ubuntu24.04.AppImage
+sha256sum -c helium_drm_fixer_gui.AppImage.sha256
+chmod u+x helium_drm_fixer_gui.AppImage
+./helium_drm_fixer_gui.AppImage
 ```
 
 The checksum detects file damage; it is not our app-update signature. Obtain both
@@ -25,7 +25,9 @@ does not require root. Do not run the GUI with `sudo`.
 
 The AppImage contains the GUI, embedded UI resources, bundled runtime libraries
 and dependency notices. It does not contain Widevine or a browser. CLI self-update
-commands do not update this GUI preview; replace the AppImage manually.
+commands do not update the GUI. From version 0.1.2 the GUI's own footer can install
+newer signed stable GUI releases. Keep the original AppImage filename for this.
+The old 0.1.1 preview needs one manual upgrade first. See [APP_UPDATES.md](APP_UPDATES.md).
 
 ## Real browser test
 

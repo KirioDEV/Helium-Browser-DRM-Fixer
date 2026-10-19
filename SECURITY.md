@@ -289,8 +289,17 @@ Programmhash werden gebunden; der Helfer prüft die signierte Übergabe erneut.
 Backup, Journal, Sperre und Wiederherstellung schützen die einzelne Programmdatei.
 `scheduled` bestätigt nur die Planung. Erst `--app-update-status JOB --json`
 mit `installed` beziehungsweise `restored` bestätigt den Abschluss. Es erfolgt
-kein automatischer Start der neu heruntergeladenen Programmdatei. Der alte
+bei der CLI kein automatischer Start der neu heruntergeladenen Programmdatei. Der alte
 Recovery-Helfer bleibt für Statusabfragen und `--restore-app` verfügbar.
+
+Die GUI ab 0.1.2 verwendet eine getrennte, fest kompilierte Paketidentität und
+eigene Zustandsverzeichnisse. Nach bestätigtem Update startet sie die vollständig
+geprüfte neue GUI. Unter Linux wird das äußere AppImage ersetzt; native Eltern-
+und Helferdatei werden zusätzlich an einen separaten Hash gebunden. Die geladenen
+AppImage-Bibliotheken werden vor dem Elternende in das private Helferverzeichnis
+kopiert und gegengeprüft, damit das Aushängen des alten AppImages sie nicht entfernt.
+Bei einer abgelehnten Übergabe wird die alte GUI nur nach erneutem Hashabgleich
+gestartet. Details und Testgrenzen stehen in `ui/APP_UPDATES.md`.
 
 Die CI baut und testet Windows mit MSVC sowie Linux mit GCC und Clang. Nur nach
 erfolgreichen Build-Jobs eines main-Push-Laufs wird der Signierjob im selben

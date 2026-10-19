@@ -13,6 +13,6 @@ build_directory=${1:-build/linux-gui}
 cmake -S . -B "$build_directory" -G Ninja -DCMAKE_BUILD_TYPE=Release \
     -DBUILD_TESTING=ON -DFIXER_BUILD_GUI=ON \
     -DFIXER_APP_UPDATE_PUBLIC_KEY:FILEPATH="$repository/keys/app-update-public.der"
-cmake --build "$build_directory" --target helium_drm_fixer_gui helium_drm_fixer --parallel 4
+cmake --build "$build_directory" --target helium_drm_fixer_gui helium_drm_fixer fixer_gui_update_tests fixer_tests fixer_app_process_tests --parallel 4
 env -u WAYLAND_DISPLAY SLINT_BACKEND=winit-software \
-    xvfb-run -a ctest --test-dir "$build_directory" -R '^gui_readonly_startup$' --output-on-failure
+    xvfb-run -a ctest --test-dir "$build_directory" -R '^(gui_readonly_startup|gui_signed_updates|security_and_transactions|signed_app_packages|ci_release_signing)$' --output-on-failure

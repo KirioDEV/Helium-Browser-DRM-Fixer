@@ -1,16 +1,13 @@
 #include <set>
 
+#include "app_identity.hpp"
 #include "app_update.hpp"
 #include "directory.hpp"
 
 namespace fixer {
 namespace {
-constexpr auto state_name = ".helium-app-update";
-#ifdef _WIN32
-constexpr auto executable_name = "helium_drm_fixer.exe";
-#else
-constexpr auto executable_name = "helium_drm_fixer";
-#endif
+constexpr auto state_name = app_update_state_name;
+constexpr auto executable_name = app_update_binary;
 
 bool digest_valid(const std::string &value) {
   return value.size() == 64 &&

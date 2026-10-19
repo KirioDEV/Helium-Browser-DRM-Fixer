@@ -3,16 +3,18 @@
 Die optionale Oberfläche verwendet Slint 1.18.1 und den vorhandenen C++-Kern.
 Sie bietet lokalen Status, einen expliziten Widevine-Zielpfad, Installation von
 Google, Wiederherstellung, Phasenmeldungen und Abbruch. Installation und Restore
-verlangen eine Bestätigung. Beim Start findet nur eine lokale Prüfung statt.
+verlangen eine Bestätigung. Nach der lokalen Prüfung fragt die GUI im Hintergrund
+nach einem neueren stabilen App-Release. Installation erfolgt erst nach Bestätigung.
 Laufende Arbeiten blockieren das Fenster nicht; ein Schließen während eines
 Vorgangs wird verhindert, bis der Vorgang bzw. seine sichere Rücknahme beendet ist.
 
 Der Schalter `FIXER_BUILD_GUI` ist standardmäßig aus. Die CLI und deren signierte
-Release-Pakete bleiben eigenständig. GUI-App-Updates und der Linux-Praxistest
-stehen noch aus. Der Workflow „Build GUI previews“ baut separat MSVC und Linux;
+Release-Pakete bleiben eigenständig. Der Linux-Browser-Praxistest steht noch aus.
+Der Workflow „Build GUI previews“ baut separat MSVC und Linux;
 die Windows-EXE und das Linux-AppImage dienen als herunterladbare Testpakete
 für ein Pre-release. Beide verwenden dasselbe SVG-Icon.
-Die Versionsanzeige ist noch kein automatischer Update-Check.
+Ab 0.1.2 bietet die Versionszeile signierte App-Updates mit sicherem Austausch
+und Neustart. [Bedienung, Wiederherstellung und Release-Ablauf](APP_UPDATES.md).
 
 Der Workflow lädt `windows-gui-preview-x64` und
 `linux-gui-preview-ubuntu24.04-x86_64` als getrennte Artefakte hoch. Die Dateien

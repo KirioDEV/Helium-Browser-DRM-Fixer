@@ -12,6 +12,7 @@ import subprocess
 import urllib.request
 
 from collect_gui_licenses import collect
+from package_gui_release import gui_candidate
 
 ROOT = Path(__file__).resolve().parent.parent
 TOOLS = {
@@ -125,6 +126,7 @@ def package(build, output):
     for name in ("README.md", "LICENSE", "SECURITY.md", "THIRD_PARTY.md"):
         shutil.copyfile(ROOT / name, share / name)
     shutil.copyfile(ROOT / "ui/LINUX_TESTING.md", share / "LINUX_TESTING.md")
+    shutil.copyfile(ROOT / "ui/APP_UPDATES.md", share / "APP_UPDATES.md")
     collect(build / "_deps/slint-src/api/cpp/Cargo.toml", "x86_64-unknown-linux-gnu", share / "licenses/rust")
     for dependency, filename in (("json", "LICENSE.MIT"), ("miniz", "LICENSE")):
         shutil.copyfile(build / f"_deps/{dependency}-src/{filename}", share / "licenses" / f"{dependency}-LICENSE")
@@ -144,13 +146,16 @@ def package(build, output):
         "--library", "/usr/lib/x86_64-linux-gnu/libxkbcommon-x11.so.0",
         "--library", "/usr/lib/x86_64-linux-gnu/libfontconfig.so.1", env=tool_environment)
     library_notices(appdir, share / "licenses/linux")
-    image = output / f"helium-drm-fixer-gui-{version}-linux-x86_64-{baseline}.AppImage"
+    image = output / "helium_drm_fixer_gui.AppImage"
     environment = {**tool_environment, "ARCH": "x86_64", "VERSION": version}
     run(image_tool, "--runtime-file", runtime, appdir, image, env=environment)
     image.chmod(0o755)
     (output / (image.name + ".sha256")).write_text(
         hashlib.sha256(image.read_bytes()).hexdigest() + "  " + image.name + "\n", encoding="ascii")
     shutil.copyfile(ROOT / "ui/LINUX_TESTING.md", output / "LINUX_TESTING.md")
+    shutil.copyfile(ROOT / "ui/APP_UPDATES.md", output / "APP_UPDATES.md")
+    if baseline == "ubuntu24.04":
+        gui_candidate(build, image, version, "linux-x86_64-ubuntu24.04", output / "update-candidate")
     commit = os.environ.get("GITHUB_SHA")
     if commit is not None and not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise ValueError("Invalid source commit metadata")
@@ -161,7 +166,7 @@ def package(build, output):
         "build_tools": {name: {"url": entry[0], "sha256": entry[1]}
                         for name, entry in TOOLS.items()}}, indent=2) + "\n", encoding="utf-8")
     print(f"GUI preview ready: {image}")
-    print("Preview only: not signed for self-update and not published.")
+    print("GUI updates require signed stable release packages. No release was published.")
 
 
 if __name__ == "__main__":

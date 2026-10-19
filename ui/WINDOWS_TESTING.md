@@ -23,7 +23,9 @@ if ($actual -ne $expected) { throw 'Checksum mismatch' }
 The checksum detects file damage; obtain both files from the project's release
 page. This preview is not Authenticode-signed, so Windows may show the unknown
 publisher/SmartScreen prompt. It is separate from signed CLI update packages;
-the CLI updater does not install this GUI preview. Replace the EXE manually.
+the CLI updater does not install this GUI. From version 0.1.2 the footer can install
+newer signed stable GUI releases. Keep the original EXE filename. The old 0.1.1
+GUI needs one manual upgrade first. See [APP_UPDATES.md](APP_UPDATES.md).
 
 `gui-notices.zip` is an optional readable copy of the notice archive embedded as
 RCDATA resource 104. It contains project/Slint/Rust dependency licenses and the

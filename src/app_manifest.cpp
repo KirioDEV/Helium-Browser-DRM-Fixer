@@ -3,6 +3,7 @@
 #include <map>
 #include <set>
 
+#include "app_identity.hpp"
 #include "app_update.hpp"
 #include "app_update_trust.hpp"
 
@@ -71,7 +72,7 @@ AppPackageManifest parse_manifest(View bytes, const std::string &expected) {
     require(json.is_object() && json.size() == 7 &&
                 json.at("schema_version").is_number_unsigned() &&
                 json.at("schema_version") == 1 &&
-                json.at("app_id") == "helium-drm-fixer-cpp" &&
+                json.at("app_id") == app_update_id &&
                 json.at("repository") == app_update_repository,
             "Unknown signed app manifest identity/schema");
     AppPackageManifest result;
@@ -80,11 +81,12 @@ AppPackageManifest parse_manifest(View bytes, const std::string &expected) {
     require(result.version == expected, "Signed app manifest version mismatch");
 #ifdef _WIN32
     constexpr auto platform = "windows-x64";
-    const std::string executable = "bin/helium_drm_fixer.exe";
+
 #else
     constexpr auto platform = "linux-x86_64-ubuntu24.04";
-    const std::string executable = "bin/helium_drm_fixer";
+
 #endif
+    const std::string executable = std::string("bin/") + app_update_binary;
     result.platform = json.at("platform").get<std::string>();
     require(result.platform == platform, "Signed update platform mismatch");
     const auto &package = json.at("package");
@@ -108,7 +110,7 @@ AppPackageManifest parse_manifest(View bytes, const std::string &expected) {
                                   share + "THIRD_PARTY.md",
                                   share + "licenses/nlohmann-json-MIT.txt",
                                   share + "licenses/miniz-MIT.txt"};
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(FIXER_GUI_APP)
     for (const auto &dll :
          {"libstdc++-6.dll", "libgcc_s_seh-1.dll", "libwinpthread-1.dll"})
       allowed.insert("bin/" + std::string(dll));
@@ -152,6 +154,16 @@ AppPackageManifest parse_manifest(View bytes, const std::string &expected) {
   }
 }
 }  // namespace
+
+void validate_app_payload(std::span<const unsigned char> bytes,
+                          bool executable) {
+  validate_binary(bytes, !executable);
+#if defined(FIXER_GUI_APP) && !defined(_WIN32)
+  require(executable && bytes.size() >= 64 && bytes[8] == 'A' &&
+              bytes[9] == 'I' && bytes[10] == 2,
+          "GUI update requires a Type-2 AppImage");
+#endif
+}
 
 bool app_update_key_configured() {
   return app_update_trusted_key_hex[0] != '\0';
@@ -268,7 +280,7 @@ std::vector<AppPackageFile> unpack_app_package(
     require(sha256(bytes) == file.at("sha256").get<std::string>(),
             "App ZIP file SHA-256 mismatch");
     if (path.starts_with("bin/")) {
-      validate_binary(bytes, !executable);
+      validate_app_payload(bytes, executable);
 #ifdef _WIN32
       if (executable) {
         const auto offset = static_cast<std::size_t>(bytes[0x3c]) |
