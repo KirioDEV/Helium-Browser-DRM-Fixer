@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(helium_drm_fixer VERSION 0.1.2 LANGUAGES C CXX)
+project(helium_drm_fixer VERSION 0.1.3 LANGUAGES C CXX)
 if(NOT WIN32 AND NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
     message(FATAL_ERROR "Supported platforms: Windows 11 and Linux")
 endif()
