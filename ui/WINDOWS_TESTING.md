@@ -1,7 +1,7 @@
-# Windows GUI preview
+# Windows GUI: download and testing
 
 Download `helium_drm_fixer_gui.exe` and its `.sha256` file from the project's
-preview release. The build targets **Windows 11 x64**. Only the EXE is needed to
+stable release. The build targets **Windows 11 x64**. Only the EXE is needed to
 run: compiler libraries, Slint UI resources, the application icon and dependency
 notices are embedded. No installer or adjacent DLLs are needed.
 
@@ -21,10 +21,11 @@ if ($actual -ne $expected) { throw 'Checksum mismatch' }
 ```
 
 The checksum detects file damage; obtain both files from the project's release
-page. This preview is not Authenticode-signed, so Windows may show the unknown
+page. The EXE is not Authenticode-signed, so Windows may show the unknown
 publisher/SmartScreen prompt. It is separate from signed CLI update packages;
-the CLI updater does not install this GUI. From version 0.1.2 Settings > Updates can install
-newer signed stable GUI releases. Keep the original EXE filename. The old 0.1.1
+the CLI updater does not install this GUI. Version 0.1.2 uses footer update controls;
+since 0.1.3, Settings > Updates installs newer signed stable GUI releases.
+Keep the original EXE filename. The old 0.1.1
 GUI needs one manual upgrade first. See [APP_UPDATES.md](APP_UPDATES.md).
 
 `gui-notices.zip` is an optional readable copy of the notice archive embedded as
@@ -35,7 +36,8 @@ Rust standard-library notices. It is not loaded or extracted at application star
 
 1. Put the EXE alone into an empty folder and start it as your normal user.
 2. Check that Explorer and the running window display the application icon.
-3. Test Settings, theme selection, Help and About.
+3. Test Settings, theme selection, Updates, Help and About. Update checks belong
+   to Settings > Updates; the local Widevine Check does not contact GitHub.
 4. Before installing Widevine, note Helium's playback result for a specific title.
 5. Close Helium and Chrome completely. Select **Check** and review the exact target.
 6. Select **Install Widevine**, review and confirm the destination. Restart Helium
@@ -45,12 +47,22 @@ Rust standard-library notices. It is not loaded or extracted at application star
 
 ## Maintainer handoff
 
-After committing and pushing, wait for **Actions > Build GUI previews** to pass.
-Download `windows-gui-preview-x64`, extract the outer artifact ZIP and attach
-the EXE, checksum, SVG, `gui-notices.zip` and this guide to a GitHub **pre-release**.
-Record its source commit from `preview.json`. The workflow builds and tests the
-preview but does not publish a release or replace stable CLI downloads.
+After committing and pushing, wait for **Actions > Build GUI previews**, including
+its signing job, to pass. Stable releases use the EXE, checksum and signed
+ZIP/manifest/signature from **signed-gui-app-release**, together with the Linux
+GUI assets and the CLI artifacts for the same commit. Follow
+[APP_UPDATES.md](APP_UPDATES.md) for the complete inventory and verification.
+Publication remains manual. The separate `windows-gui-preview-x64` artifact is
+for unsigned previews, including optional SVG and readable notice downloads.
 
-Local MinGW builds are development builds. Downloadable Windows previews use
+Local MinGW builds are development builds. Published Windows builds use
 MSVC; the packager rejects MinGW builds because their compiler-runtime notices
 are not included by this MSVC packaging path.
+
+## Project scope
+
+This is an independent utility, not an official Google, Widevine or Helium app.
+The download contains no Widevine binaries. Installation stores Widevine locally;
+the fixer does not decrypt media or extract DRM keys. See the full
+[disclaimer](https://github.com/KirioDEV/Helium-Browser-DRM-Fixer#disclaimer) and
+[third-party notices](https://github.com/KirioDEV/Helium-Browser-DRM-Fixer/blob/main/THIRD_PARTY.md).

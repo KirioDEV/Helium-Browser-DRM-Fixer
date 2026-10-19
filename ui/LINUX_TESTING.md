@@ -1,11 +1,11 @@
-# Linux GUI preview
+# Linux GUI: download and testing
 
-This is a separate preview of the graphical application. It is not an update
-package for the existing CLI and does not install itself automatically.
+The standalone AppImage is the graphical application. Its signed update packages
+are separate from CLI packages; installing an app update requires confirmation.
 
 ## Download and start
 
-Download the `.AppImage` and its `.sha256` file from the GitHub preview release.
+Download the `.AppImage` and its `.sha256` file from the GitHub stable release.
 The CI distribution baseline is **Ubuntu 24.04 x86_64**; older systems and other
 distributions are not guaranteed compatible. A working X11 or Wayland desktop,
 system fonts and a compatible graphics/input environment are required.
@@ -30,11 +30,19 @@ does not require root. Do not run the GUI with `sudo`.
 
 The AppImage contains the GUI, embedded UI resources, bundled runtime libraries
 and dependency notices. It does not contain Widevine or a browser. CLI self-update
-commands do not update the GUI. From version 0.1.2 Settings > Updates can install
-newer signed stable GUI releases. Keep the original AppImage filename for this.
+commands do not update the GUI. Version 0.1.2 uses footer update controls;
+since 0.1.3, Settings > Updates installs newer signed stable GUI releases.
+Keep the original AppImage filename for this.
 The old 0.1.1 preview needs one manual upgrade first. See [APP_UPDATES.md](APP_UPDATES.md).
 
 ## Real browser test
+
+The maintainer reports the 0.1.3 release and app-update test complete; the real
+Bazzite/Helium DRM test remains pending. A tester starting on 0.1.2 should first
+update to 0.1.3 and confirm the new version before the steps below. Version 0.1.2
+uses footer update controls; 0.1.3 uses Settings > Updates. If the old updater
+rejects `/home`, preserve the old AppImage and record its exact path/error before
+trying to launch it from the resolved physical path.
 
 1. Record the distribution/version, desktop (X11/Wayland), Helium version and path.
 2. Before installing anything, test a specific streaming title in Helium and note
@@ -60,11 +68,20 @@ cookies or streaming authorization tokens.
 
 ## Maintainer handoff
 
-After committing and pushing, open **Actions → Build GUI previews**. Download
-`linux-gui-preview-ubuntu24.04-x86_64` after the workflow is green. Extract the
-outer GitHub artifact ZIP, then upload the inner AppImage, checksum and this guide
-to a GitHub **pre-release** with matching source commit in its description.
-The workflow builds and checks packages; it does not publish a release.
+After committing and pushing, wait for **Actions → Build GUI previews**, including
+its signing job, to pass. Stable releases use the AppImage, checksum and signed
+ZIP/manifest/signature from **signed-gui-app-release**. Include Windows GUI and
+CLI assets from the same commit, following [APP_UPDATES.md](APP_UPDATES.md).
+The `linux-gui-preview-ubuntu24.04-x86_64` artifact remains available for unsigned
+preview testing. Publication is manual; prereleases are not offered by the updater.
 
 The existing signed CLI release and its update assets remain separate. An actual
 GUI-based streaming test on Linux remains pending until a tester reports it.
+
+## Project scope
+
+This is an independent utility, not an official Google, Widevine or Helium app.
+The AppImage contains no Widevine binaries. Installation stores Widevine locally;
+the fixer does not decrypt media or extract DRM keys. See the full
+[disclaimer](https://github.com/KirioDEV/Helium-Browser-DRM-Fixer#disclaimer) and
+[third-party notices](https://github.com/KirioDEV/Helium-Browser-DRM-Fixer/blob/main/THIRD_PARTY.md).

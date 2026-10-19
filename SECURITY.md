@@ -5,6 +5,13 @@ Prüfgrenzen. Es ersetzt kein unabhängiges Sicherheitsaudit. Die Angaben zu
 CDM-Downloads beziehen sich auf Widevine; das getrennte App-Update-Verfahren
 und seine GitHub-Quelle sind im letzten Abschnitt beschrieben.
 
+Das Projekt ist ein unabhängiges Installationswerkzeug und kein offizielles
+Produkt von Google, Widevine oder Helium. Repository und App-Releases enthalten
+keine Widevine-Binaries; Installation, Cache und Backups speichern sie dagegen
+lokal beim Benutzer. Der Fixer entschlüsselt keine Medien, extrahiert keine
+Inhaltsschlüssel und umgeht keine DRM-/HDCP- oder Zugangsprüfungen.
+Siehe den [Disclaimer](README.md#disclaimer) und [Drittanbieterhinweise](THIRD_PARTY.md).
+
 ## Schutzmaßnahmen für CDM-Download und Installation
 
 - Nur zwei belegte Google-Downloadhosts: `dl.google.com` und
@@ -121,6 +128,12 @@ Benutzer ausdrücklich ausgewählt werden. Selbst korrektes Widevine kann bei
 Streamingdiensten wegen Browseridentität, HDCP oder weiterer Anforderungen scheitern.
 
 ## Getestet und noch offen
+
+Aktueller Maintainer-Stand: Release 0.1.3 und der App-Update-Test von 0.1.2 auf
+0.1.3 sind als abgeschlossen gemeldet. Dies ist eine Maintainer-Rückmeldung,
+kein unabhängiges Audit. Der reale Bazzite-/Helium-Test für Widevine-Installation,
+Streaming und Restore steht weiterhin aus. Ältere Testberichte unten beschreiben
+ihre jeweiligen Versionen und ersetzen diese noch offene Prüfung nicht.
 
 Lokal geprüft: Windows-MinGW-Build; Ubuntu-24.04-GCC-Build;
 Ubuntu-Clang-Build mit AddressSanitizer/UndefinedBehaviorSanitizer;

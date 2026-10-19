@@ -24,11 +24,16 @@ matching asset names, manifest and signature.
 
 ## First update-capable version
 
-Version **0.1.2** introduces GUI self-updates. Download this GUI once manually:
-the previous 0.1.1 GUI preview does not contain the update feature. Subsequent
-stable versions with signed GUI packages can be installed from Settings > Updates.
+Version **0.1.2** introduced GUI self-updates. The old 0.1.1 GUI preview needs
+one manual upgrade to 0.1.2 or newer. Later signed stable versions can be
+installed from the app, using Settings > Updates since 0.1.3.
 Do not overwrite an existing release with different binaries using the same
 version. Increase the project version for each new update.
+
+Version 0.1.2 uses its original footer check/update controls. Since 0.1.3, these
+controls live in Settings > Updates and the footer update link opens that page.
+The maintainer reports the 0.1.3 release and app-update test complete. Real
+Bazzite/Helium Widevine installation and streaming testing remain pending.
 
 ## Supported files and recovery
 
@@ -77,11 +82,11 @@ Only then is the encrypted private key temporarily materialized. It is not copie
 to outputs. GUI and CLI signing operate on different build runs/artifact names.
 
 Download **signed-gui-app-release** after signing succeeds. Extract the outer
-artifact ZIP and upload these files to the matching stable release, e.g. `v0.1.2`:
+artifact ZIP and upload these files to the matching stable release, e.g. `v0.1.3`:
 
-- `helium-drm-fixer-gui-0.1.2-windows-x64.zip`
+- `helium-drm-fixer-gui-0.1.3-windows-x64.zip`
 - The Windows ZIP's `.manifest.json` and `.manifest.sig`
-- `helium-drm-fixer-gui-0.1.2-linux-x86_64-ubuntu24.04.zip`
+- `helium-drm-fixer-gui-0.1.3-linux-x86_64-ubuntu24.04.zip`
 - The Linux ZIP's `.manifest.json` and `.manifest.sig`
 - `helium_drm_fixer_gui.exe` and its `.sha256`
 - `helium_drm_fixer_gui.AppImage` and its `.sha256`
@@ -94,6 +99,25 @@ For this project's stable releases, upload the separate CLI signed assets from
 existing CLI updater and README download links. Both build/signing workflows
 must be successful. Copy/adapt the GUI release notes to put the Windows GUI
 download first.
+
+The GUI inventory contains ten files. The CLI artifact adds these seven files,
+for **17 release assets in total** (substitute the actual release version):
+
+```text
+helium_drm_fixer.exe
+helium-drm-fixer-cpp-0.1.3-windows-x64.zip
+helium-drm-fixer-cpp-0.1.3-windows-x64.zip.manifest.json
+helium-drm-fixer-cpp-0.1.3-windows-x64.zip.manifest.sig
+helium-drm-fixer-cpp-0.1.3-linux-x86_64-ubuntu24.04.zip
+helium-drm-fixer-cpp-0.1.3-linux-x86_64-ubuntu24.04.zip.manifest.json
+helium-drm-fixer-cpp-0.1.3-linux-x86_64-ubuntu24.04.zip.manifest.sig
+```
+
+The CLI signer currently exports no separate CLI-EXE checksum. Use the GUI
+`release-notes.md` as release-description text, not as an extra required asset.
+Attach individual files, not the outer GitHub artifact ZIPs. Stable releases
+must not be marked as prereleases, and must be selected as latest to be offered
+by the updater. Keep previous releases available for update/recovery tests.
 
 Before publication, the locally trusted GUI can verify a signed GUI ZIP offline
 with `--verify-app-release PATH_TO_GUI_ZIP`. It reports JSON and does not install

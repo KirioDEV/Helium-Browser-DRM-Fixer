@@ -8,7 +8,7 @@ nicht zum veröffentlichten C++-Paket.
 | --- | --- | --- | --- |
 | nlohmann/json | 3.12.0, SHA-256 in CMakeLists.txt | MIT | https://github.com/nlohmann/json |
 | miniz | 3.1.2, SHA-256 in CMakeLists.txt | MIT | https://github.com/richgel999/miniz |
-| Slint (optionale UI-Vorschau) | 1.18.1, SHA-256 in cmake/SlintGui.cmake | Slint Royalty-free Desktop, Mobile, and Web Applications License 2.0 | https://github.com/slint-ui/slint |
+| Slint (optionale GUI) | 1.18.1, SHA-256 in cmake/SlintGui.cmake | Slint Royalty-free Desktop, Mobile, and Web Applications License 2.0 | https://github.com/slint-ui/slint |
 | Corrosion (nur GUI-Build) | 0.6.1, SHA-256 in cmake/SlintGui.cmake | MIT | https://github.com/corrosion-rs/corrosion |
 | libcurl (Linux) | Systempaket, mindestens 7.85 | curl license | https://curl.se/docs/copyright.html |
 | OpenSSL (Linux) | Systempaket, mindestens 3.0 | Apache-2.0 | https://www.openssl.org/source/license.html |
@@ -18,12 +18,12 @@ Windows nutzt WinHTTP, Crypt32, BCrypt und weitere Windows-Systembibliotheken;
 sie werden nicht in das Paket kopiert. Die Linux-CLI bindet Systembibliotheken
 dynamisch. Das separate GUI-AppImage bündelt einen Teil dieser Bibliotheken.
 
-Die Slint-Vorschau wird noch nicht in signierte CLI-Update-Pakete installiert. Ihr
-`AboutSlint`-Widget ist über „Settings → About“ erreichbar. Die Preview-Paketierung
+Die Slint-GUI hat eigene signierte Update-Pakete und wird nicht durch CLI-Pakete
+ersetzt. Ihr `AboutSlint`-Widget ist über „Settings → About“ erreichbar. Die GUI-Paketierung
 erfasst zusätzlich die Lizenztexte der tatsächlich ausgewählten Rust-Abhängigkeiten
 und der Rust-Standardbibliothek.
 
-Das Linux-GUI-Testpaket enthält die Lizenztexte des über Cargo.lock gebundenen
+Das Linux-GUI-AppImage enthält die Lizenztexte des über Cargo.lock gebundenen
 Rust-Abhängigkeitsgraphen und der Rust-Standardbibliothek. Paketierung und
 Versionsinventar stehen in `tools/collect_gui_licenses.py`. Für
 im Crate fehlende Lizenzdateien enthält `tools/gui-license-supplements.json`
@@ -36,7 +36,7 @@ Die AppImage-Laufzeit hat einen eigenen beigefügten MIT-Lizenztext.
 AppImage-Buildwerkzeuge sind nach Version und SHA-256 in
 `tools/package_linux_gui.py` festgelegt und werden nicht mitverteilt.
 
-Die Windows-GUI-Preview wird mit MSVC gebaut. `tools/package_windows_gui.py`
+Die Windows-GUI wird mit MSVC gebaut. `tools/package_windows_gui.py`
 kopiert die EXE und bettet das zusätzliche Lizenz-/Quelleninventar als ZIP in
 RCDATA-Ressource 104 ein. Das separat angebotene `gui-notices.zip` ist eine
 bytegleiche lesbare Kopie; die EXE benötigt diese Datei nicht zum Start.
@@ -60,6 +60,19 @@ Das Widevine-Paket ist proprietär und wird nicht mitgeliefert oder in CI-Artefa
 kopiert. Ein im Paket vorhandener LICENSE-Text wird bei der Installation erhalten.
 Heruntergeladene Testpakete und synthetische Fixtures werden nicht als
 Release-Bestandteile mitinstalliert.
+
+Die Projektlizenz erteilt keine Rechte an Widevine. Maßgeblich bleiben die
+jeweils anwendbaren Bedingungen des Rechteinhabers; siehe
+[Googles Widevine-Hinweis](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/third_party/widevine/LICENSE).
+Das Repository und die App-Releases hosten keine Widevine-Binaries. Die App
+speichert bei Nutzung jedoch heruntergeladene Pakete, CDM-Dateien und Backups
+lokal im Benutzerkonto. Sie lädt diese Dateien nicht zu diesem Projekt hoch,
+entschlüsselt keine Streaminginhalte und extrahiert keine DRM-/Inhaltsschlüssel.
+Das Projekt ist nicht mit Google, Widevine, imput oder dem Helium-Projekt
+verbunden, wird nicht als deren offizielles Produkt herausgegeben und wird
+nicht von ihnen gesponsert. Namen und Marken dienen nur
+der Produktzuordnung. Der vollständige [Disclaimer](README.md#disclaimer)
+beschreibt Umfang und Grenzen; er ersetzt keine erforderlichen Nutzungsrechte.
 
 Abweichungen vom ursprünglichen Plan: Windows-native HTTP/Kryptografie statt
 libcurl/OpenSSL auf Windows; miniz statt libarchive für ZIP; ein strikt begrenzter

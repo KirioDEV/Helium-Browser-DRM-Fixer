@@ -1,4 +1,4 @@
-# Slint-Oberfläche (erste Vorschau)
+# GUI-Entwicklung und Paketierung
 
 Die optionale Oberfläche verwendet Slint 1.18.1 und den vorhandenen C++-Kern.
 Sie bietet lokalen Status, einen expliziten Widevine-Zielpfad, Installation von
@@ -9,16 +9,20 @@ Laufende Arbeiten blockieren das Fenster nicht; ein Schließen während eines
 Vorgangs wird verhindert, bis der Vorgang bzw. seine sichere Rücknahme beendet ist.
 
 Der Schalter `FIXER_BUILD_GUI` ist standardmäßig aus. Die CLI und deren signierte
-Release-Pakete bleiben eigenständig. Der Linux-Browser-Praxistest steht noch aus.
+Release-Pakete bleiben eigenständig. Downloads und Bedienung stehen in
+[README.md](../README.md). Der Linux-/Bazzite-Browser-Praxistest steht noch aus;
+der Maintainer hat den App-Update-Test von 0.1.2 auf 0.1.3 als bestanden gemeldet.
 Der Workflow „Build GUI previews“ baut separat MSVC und Linux;
-die Windows-EXE und das Linux-AppImage dienen als herunterladbare Testpakete
-für ein Pre-release. Beide verwenden dasselbe SVG-Icon.
-Ab 0.1.2 bietet Settings > Updates signierte App-Updates mit sicherem Austausch
+die fertige Windows-EXE und das Linux-AppImage verwenden dasselbe SVG-Icon.
+Seit 0.1.2 gibt es signierte GUI-App-Updates; ab 0.1.3 unter Settings > Updates,
+mit sicherem Austausch
 und Neustart. [Bedienung, Wiederherstellung und Release-Ablauf](APP_UPDATES.md).
 
-Der Workflow lädt `windows-gui-preview-x64` und
-`linux-gui-preview-ubuntu24.04-x86_64` als getrennte Artefakte hoch. Die Dateien
-werden anschließend manuell an ein Pre-release angehängt; Details für Windows:
+Der Workflow behält seinen bisherigen Namen und lädt weiterhin
+`windows-gui-preview-x64` und `linux-gui-preview-ubuntu24.04-x86_64` für
+unsignierte Vorschauen hoch. Nach erfolgreichem main-Push signiert der
+eingebundene Job die GUI-Kandidaten. Für stabile Releases die Dateien aus
+`signed-gui-app-release` verwenden und manuell veröffentlichen; Details für Windows:
 [Download und Test](WINDOWS_TESTING.md). Die Windows-EXE enthält die zusätzlichen
 Lizenztexte, benötigt keine Nachbar-DLLs und führt beim Start keine Entpackroutine aus.
 
@@ -92,8 +96,9 @@ Fenstertest benötigt eine grafische Sitzung, in CI beispielsweise Xvfb.
 
 Die Windows-GUI wird statisch gelinkt. Die verbleibenden Windows-System-DLLs
 werden vom Betriebssystem bereitgestellt. Eine erfolgreiche lokale Prüfung ist
-noch kein Nachweis für alle Windows-11-Systeme; ein Test auf sauberem Windows
-bleibt vor der Freigabe erforderlich. Linux nutzt weiterhin Systembibliotheken.
+kein Nachweis für alle Windows-11-Systeme; zusätzliche Tests auf sauberen Systemen
+erweitern die Aussagekraft. Das Linux-AppImage bündelt Laufzeitbibliotheken,
+benötigt aber weiterhin einen passenden Desktop und Systemkomponenten.
 
 Die statische MinGW-GUI verwendet explizit UCRT (`-mcrtdll=ucrt`). Gemischte
 MSVCRT-/UCRT-Allocatorimporte führten beim Join beendeter Arbeitsthreads zu
@@ -111,5 +116,9 @@ Die Oberfläche ist englisch, die Theme-Auswahl liegt unter „Settings → Colo
 Das Fenster hat eine feste Größe von 640 × 560 logischen Pixeln. Die
 Installationsbestätigung bleibt dabei ohne Scrollen sichtbar. Die Settings-Zeile
 und das AboutSlint-Widget sind kompakt begrenzt.
-Help und About ersetzen den früheren Menüleisten- und Footer-Bereich. Lizenztext:
+Updates, Help und About sind gleich große Settings-Schaltflächen. Die
+Update-Prüfung und Installation liegen unter Settings > Updates; der Footer
+zeigt nur Version und gegebenenfalls einen farbigen, unterstrichenen Update-Link.
+Die Prüfung bleibt mindestens eine Sekunde sichtbar, ohne den UI-Thread zu blockieren.
+Lizenztext:
 https://github.com/slint-ui/slint/blob/v1.18.1/LICENSES/LicenseRef-Slint-Royalty-free-2.0.md
