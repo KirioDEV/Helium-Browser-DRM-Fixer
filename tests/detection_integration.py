@@ -82,6 +82,15 @@ def main():
             alias_target = home / ".config/net.imput.helium/WidevineCdm"
             execute("explicit target below symlinked HOME", ["--helium-path",
                     alias_target, "--check"], 3, contains=("Widevine is missing",))
+            target.mkdir()
+            output = execute("browser-created empty CDM root", ["--check", "--json"], 4)
+            status = json.loads(output)
+            if status["state"] != "locally_invalid" or "registration is missing" not in status["detail"]:
+                raise RuntimeError("Missing registration was misclassified as an access failure")
+            marker = target / "browser-owned-marker"
+            marker.write_text("preserve this incomplete installation", encoding="ascii")
+            execute("unregistered existing CDM files", ["--check"], 4,
+                    contains=("registration is missing",))
             execute("cache below symlinked HOME", ["--cache-path"], program=helper,
                     contains=(str(real_home / ".cache/helium-drm-fixer"),), read_only=False)
             environment["XDG_CACHE_HOME"] = str(home / ".cache")
@@ -96,8 +105,41 @@ def main():
                     contains=("Installed Widevine 1.2.3.4",))
             execute("installed check below symlinked HOME", ["--check"],
                     contains=("Widevine 1.2.3.4",))
+            hint = target / "latest-component-updated-widevine-cdm"
+            canonical_hint = hint.read_bytes()
+            hint.write_text(json.dumps({"Path": str(alias_target / "1.2.3.4")}), encoding="utf-8")
+            execute("browser hint using HOME alias", ["--check"],
+                    contains=("Widevine 1.2.3.4",))
+            hint.write_text(json.dumps({"Path": str(real_home / "1.2.3.4")}), encoding="utf-8")
+            execute("hint cannot escape CDM root", ["--check"], 4,
+                    contains=("Hint points outside CDM root",))
+            hint.unlink()
+            hint.symlink_to(original / "manifest.json")
+            execute("hint symlink remains rejected", ["--check"], 4,
+                    contains=("Link or special file",))
+            hint.unlink()
+            hint.write_bytes(canonical_hint)
+            if os.geteuid() != 0:
+                before = snapshot(root)
+                mode = hint.stat().st_mode & 0o777
+                try:
+                    hint.chmod(0)
+                    output = execute("unreadable hint remains an access failure",
+                                     ["--check", "--json"], 1, read_only=False)
+                    if json.loads(output)["state"] != "unavailable":
+                        raise RuntimeError("Unreadable metadata was reported as repairable")
+                finally:
+                    hint.chmod(mode)
+                if snapshot(root) != before:
+                    raise RuntimeError("Unreadable-hint check changed the installation")
             execute("restore below symlinked HOME", ["--helium-path", alias_target,
                     "--restore"], read_only=False)
+            execute("restore preserves unregistered initial state", ["--check"], 4,
+                    contains=("registration is missing",))
+            if marker.read_text(encoding="ascii") != "preserve this incomplete installation" or hint.exists():
+                raise RuntimeError("Restore changed the original incomplete installation")
+            marker.unlink()
+            target.rmdir()
             execute("restored missing state", ["--check"], 3,
                     contains=("Widevine is missing",))
             target.symlink_to(original, target_is_directory=True)

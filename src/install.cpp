@@ -135,23 +135,31 @@ void restore_locked(const fs::path &target, const Directory &parent,
   // recursively deleted.
 }
 
+#ifndef _WIN32
+fs::path component_path(const Directory &root, const fs::path &target) {
+  require(root.exists("latest-component-updated-widevine-cdm"),
+          "Widevine registration is missing (component hint file not found)");
+  const auto hint = parse_json(
+      text(root.read("latest-component-updated-widevine-cdm", 4096)));
+  require(hint.is_object() && hint.contains("Path") && hint["Path"].is_string(),
+          "Invalid component hint file");
+  const auto stored = from_utf8(hint["Path"].get<std::string>());
+  require(stored.is_absolute() && stored.lexically_normal() == stored,
+          "Invalid component hint path");
+  const auto path = resolve_home_path(stored);
+  require(path.parent_path() == target, "Hint points outside CDM root");
+  (void)version_parts(utf8(path.filename()));
+  return path;
+}
+#endif
+
 Directory installed_directory(const Directory &parent, const fs::path &target) {
   const auto root = parent.child("WidevineCdm");
 #ifdef _WIN32
   (void)target;
   return root;
 #else
-  const auto hint = parse_json(
-      text(root.read("latest-component-updated-widevine-cdm", 4096)));
-  require(hint.is_object() && hint.contains("Path") && hint["Path"].is_string(),
-          "Invalid component hint file");
-  const auto path = from_utf8(hint["Path"].get<std::string>());
-  require(path.is_absolute() && path.parent_path() == target &&
-              path.lexically_normal() == path,
-          "Hint points outside CDM root");
-  const auto version = utf8(path.filename());
-  (void)version_parts(version);
-  return root.child(version);
+  return root.child(utf8(component_path(root, target).filename()));
 #endif
 }
 }  // namespace
@@ -169,16 +177,7 @@ fs::path installed_cdm_dir(const fs::path &target) {
 #ifdef _WIN32
   return target;
 #else
-  auto hint = parse_json(
-      text(read_file(target / "latest-component-updated-widevine-cdm", 4096)));
-  require(hint.is_object() && hint.contains("Path") && hint["Path"].is_string(),
-          "Invalid component hint file");
-  const auto path = from_utf8(hint["Path"].get<std::string>());
-  require(path.is_absolute() && path.parent_path() == target &&
-              path.lexically_normal() == path,
-          "Hint points outside CDM root");
-  (void)version_parts(utf8(path.filename()));
-  return path;
+  return component_path(Directory(target), target);
 #endif
 }
 

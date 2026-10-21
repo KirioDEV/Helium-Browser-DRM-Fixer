@@ -100,6 +100,11 @@ and `unavailable`. Unknown targets/versions are `null`. Local checks leave
 `streaming_compatibility_verified` false. Read failures are operational errors,
 not an automatic recommendation to replace the CDM.
 
+On Linux, an existing CDM root without its component-registration hint is
+`locally_invalid`, not an access failure. Installation can repair that incomplete
+state while preserving the original directory for restoration. Unreadable files
+remain `unavailable` operational errors.
+
 | Code | Meaning |
 | --- | --- |
 | 0 | Success or locally valid installation |

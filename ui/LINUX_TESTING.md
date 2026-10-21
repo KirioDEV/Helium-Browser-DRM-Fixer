@@ -36,6 +36,13 @@ recovery instructions, see [APP_UPDATES.md](APP_UPDATES.md).
 
 ## Real browser test
 
+An existing `WidevineCdm` folder does not necessarily contain an active CDM.
+If its `latest-component-updated-widevine-cdm` registration file is absent,
+the app reports an incomplete local installation and permits **Install Widevine**.
+Existing files are backed up and **Restore** returns that original state, even
+if it was empty or incomplete. A genuine read/permission failure remains an
+unavailable status; it is not treated as a repair diagnosis.
+
 Use a current app build before testing Widevine. If an update fails, preserve
 the AppImage and its recovery directories, record the exact error, and follow
 [APP_UPDATES.md](APP_UPDATES.md) before retrying.
