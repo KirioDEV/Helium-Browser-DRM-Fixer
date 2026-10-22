@@ -10,23 +10,22 @@
 
 namespace fixer::testing {
 struct NetworkSettings {
-  unsigned short port = 0;
-  long total_ms = 5000;
-  long connect_ms = 1500;
-  long idle_ms = 1500;
-  long low_speed_seconds = 1;
-  long dns_ms = 1500;
-  long dns_delay_ms = 0;
-  std::string ca_file;
-  std::string peer_sha256;
-  bool dns_failure = false;
-  bool system_dns = false;
-  bool app_release = false;
-  bool app_asset = false;
-  std::optional<std::vector<std::vector<std::string>>> dns_answers;
+    unsigned short port = 0;
+    long total_ms = 5000;
+    long connect_ms = 1500;
+    long idle_ms = 1500;
+    long low_speed_seconds = 1;
+    long dns_ms = 1500;
+    long dns_delay_ms = 0;
+    std::string ca_file;
+    std::string peer_sha256;
+    bool dns_failure = false;
+    bool system_dns = false;
+    bool app_release = false;
+    bool app_asset = false;
+    std::optional<std::vector<std::vector<std::string>>> dns_answers;
 };
 
-Bytes network_request(const NetworkSettings &settings, const std::string &url,
-                      const std::string &body, std::size_t limit,
-                      bool update = false);
+Bytes network_request(const NetworkSettings& settings, const std::string& url, const std::string& body,
+                      std::size_t limit, bool update = false);
 }  // namespace fixer::testing
